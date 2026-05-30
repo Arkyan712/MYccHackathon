@@ -3,7 +3,7 @@ import shutil
 import logging
 
 from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
@@ -25,6 +25,67 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
 
 class Base(DeclarativeBase):
     pass
+
+
+async def migrate_sqlite_schema(conn: AsyncConnection) -> None:
+    """Best-effort additive migrations for the local demo database."""
+    if not settings.DATABASE_URL.startswith("sqlite"):
+        return
+
+    async def existing_columns(table: str) -> set[str]:
+        result = await conn.exec_driver_sql(f"PRAGMA table_info({table})")
+        return {row[1] for row in result.fetchall()}
+
+    async def ensure_columns(table: str, columns: dict[str, str]) -> None:
+        current = await existing_columns(table)
+        for name, ddl in columns.items():
+            if name in current:
+                continue
+            logger.info("Applying SQLite migration: %s.%s", table, name)
+            await conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+
+    await ensure_columns(
+        "agent_sessions",
+        {
+            "summary": "TEXT",
+            "planning_state": "JSON",
+            "status": "VARCHAR(20) DEFAULT 'active'",
+            "updated_at": "DATETIME",
+        },
+    )
+    await ensure_columns(
+        "agent_tasks",
+        {
+            "parent_task_id": "INTEGER",
+            "task_type": "VARCHAR(50)",
+            "assigned_agent": "VARCHAR(50)",
+            "input_data": "JSON",
+            "result": "JSON",
+            "error": "TEXT",
+            "error_code": "VARCHAR(50)",
+            "retry_count": "INTEGER DEFAULT 0",
+            "need_id": "INTEGER",
+            "match_id": "INTEGER",
+            "file_id": "INTEGER",
+            "updated_at": "DATETIME",
+        },
+    )
+    await ensure_columns(
+        "agent_files",
+        {
+            "extracted_info": "JSON",
+            "embedding": "JSON",
+        },
+    )
+    await ensure_columns(
+        "needs",
+        {
+            "selection_mode": "VARCHAR(20) DEFAULT 'single'",
+            "selected_user_ids": "JSON",
+        },
+    )
+    await conn.exec_driver_sql("UPDATE agent_sessions SET updated_at = COALESCE(updated_at, created_at)")
+    await conn.exec_driver_sql("UPDATE agent_tasks SET retry_count = COALESCE(retry_count, 0)")
 
 
 async def get_db():

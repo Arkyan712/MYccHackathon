@@ -103,7 +103,11 @@ class RerankAgent(BaseAgent):
 
         try:
             reasons = await adapter.chat_with_json(
-                messages, temperature=0.3, max_tokens=cfg["max_tokens"]
+                messages,
+                temperature=0.3,
+                max_tokens=cfg["max_tokens"],
+                timeout=8,
+                max_retries=0,
             )
         except Exception:
             logger.exception("DeepSeek explanation failed, using fallback")

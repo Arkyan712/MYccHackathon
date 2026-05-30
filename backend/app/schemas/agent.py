@@ -33,13 +33,21 @@ class TaskResponse(BaseModel):
     id: int
     session_id: int
     parent_task_id: int | None = None
+    task_type: str | None = None
     goal: str
     status: str
     assigned_agent: str | None = None
+    input_data: dict | None = None
     result: dict | None = None
     error: str | None = None
+    error_code: str | None = None
+    retry_count: int = 0
+    need_id: int | None = None
+    match_id: int | None = None
+    file_id: int | None = None
     children: list["TaskResponse"] = Field(default_factory=list)
     created_at: datetime
+    updated_at: datetime | None = None
     model_config = {"from_attributes": True}
 
 

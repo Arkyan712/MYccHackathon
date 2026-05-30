@@ -59,29 +59,24 @@ function formatPreviewTime(ts: string): string {
   height: 100%;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid #f0f0f0;
-  background: #fff;
+  border-right: 1px solid var(--border-color-light);
+  background: var(--bg-surface);
 }
 
-.conv-scroll {
-  flex: 1;
-  overflow-y: auto;
-}
+.conv-scroll { flex: 1; overflow-y: auto; }
 
 .conv-item {
   padding: 14px 16px;
   cursor: pointer;
-  border-bottom: 1px solid #f5f5f5;
-  transition: background-color 0.15s ease;
+  border-bottom: 1px solid var(--border-color-light);
+  transition: background var(--transition-fast);
 }
 
-.conv-item:hover {
-  background-color: #f6f8fa;
-}
+.conv-item:hover { background: var(--bg-surface-hover); }
 
 .conv-item.active {
-  background-color: #f0f6ff;
-  border-left: 3px solid #0969da;
+  background: var(--color-primary-bg);
+  border-left: 3px solid var(--color-primary);
   padding-left: 13px;
 }
 
@@ -95,7 +90,7 @@ function formatPreviewTime(ts: string): string {
 .conv-name {
   font-size: 14px;
   font-weight: 600;
-  color: #1f2328;
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -103,14 +98,14 @@ function formatPreviewTime(ts: string): string {
 
 .conv-time {
   font-size: 12px;
-  color: #8b949e;
+  color: var(--text-tertiary);
   flex-shrink: 0;
   margin-left: 8px;
 }
 
 .conv-preview {
   font-size: 13px;
-  color: #656d76;
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -122,6 +117,6 @@ function formatPreviewTime(ts: string): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: var(--space-lg);
 }
 </style>

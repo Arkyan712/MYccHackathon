@@ -139,6 +139,14 @@ class AIClient:
 _ai_client: AIClient | None = None
 
 
+def apply_runtime_config(*, deepseek_api_key: str | None = None) -> None:
+    """Apply settings changed from the UI to new AI client instances."""
+    global _ai_client
+    if deepseek_api_key is not None:
+        settings.DEEPSEEK_API_KEY = deepseek_api_key
+    _ai_client = None
+
+
 def get_ai_client() -> AIClient:
     global _ai_client
     if _ai_client is None:

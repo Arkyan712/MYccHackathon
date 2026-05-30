@@ -12,11 +12,25 @@
 backend/__pycache__/
 backend/**/__pycache__/
 backend/*.pyc
+backend/*.log
 backend/db_backups/
 backend/skill_graph.json
 backend/uploads/
 backend/tmp/
 backend/model_cache/
+
+# Playwright test artifacts
+.playwright-cli/*.log
+.playwright-cli/*.yml
+.playwright-cli/*.png
+.playwright-cli/node_modules/
+.playwright-cli/package.json
+.playwright-cli/package-lock.json
+.playwright-cli/test-results*/
+.playwright-cli/test-results.json
+
+# Superpowers auto-gen
+docs/superpowers/
 
 # Frontend
 frontend/node_modules/

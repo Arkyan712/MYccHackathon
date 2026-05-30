@@ -1,13 +1,17 @@
 """系统设置 API — 让用户配置 API Key 等参数。"""
 
+from pathlib import Path
+
 from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select as _s
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import BACKEND_DIR
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.integrations.client import apply_runtime_config
 from app.models.system_config import SystemConfig
 from app.models.user import User
 
@@ -47,10 +51,14 @@ async def update_settings(
     key = data.deepseek_api_key.strip()
     if key and not key.startswith("sk-"):
         raise HTTPException(400, "API Key 格式不正确，应以 sk- 开头")
+    if "\n" in key or "\r" in key:
+        raise HTTPException(400, "API Key 不能包含换行符")
 
     if key:
         await _upsert(db, "deepseek_api_key", key)
-    return {"ok": True, "message": "设置已保存"}
+        persist_env_value("DEEPSEEK_API_KEY", key)
+        apply_runtime_config(deepseek_api_key=key)
+    return {"ok": True, "message": "设置已保存并立即生效"}
 
 
 @router.get("/status")
@@ -72,6 +80,26 @@ async def _upsert(db: AsyncSession, key: str, value: str):
     else:
         db.add(SystemConfig(key=key, value=value))
     await db.commit()
+
+
+def persist_env_value(key: str, value: str, env_path: str | Path | None = None) -> None:
+    path = Path(env_path) if env_path is not None else BACKEND_DIR / ".env"
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    prefix = f"{key}="
+    updated: list[str] = []
+    replaced = False
+
+    for line in lines:
+        if line.startswith(prefix):
+            updated.append(f"{key}={value}")
+            replaced = True
+        else:
+            updated.append(line)
+
+    if not replaced:
+        updated.append(f"{key}={value}")
+
+    path.write_text("\n".join(updated) + "\n", encoding="utf-8")
 
 
 async def get_config_value(db: AsyncSession, key: str, default: str = "") -> str:

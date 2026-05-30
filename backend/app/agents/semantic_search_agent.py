@@ -42,7 +42,7 @@ class SemanticSearchAgent(BaseAgent):
 
         match_skill = self.use_skill("vector_match")
         result = await match_skill.execute(
-            {"query_embedding": need_embedding, "candidates": candidates, "top_k": 10}
+            {"query_embedding": need_embedding, "candidates": candidates, "top_k": 6}
         )
 
         memory_context = await MatchMemoryStore.retrieve_similar(db, need_embedding)

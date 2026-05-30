@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 
-from app.core.database import Base, engine, async_session, backup_db
+from app.core.database import Base, engine, async_session, backup_db, migrate_sqlite_schema
 from app.core.events import get_event_bus
 from app.knowledge.skill_graph import get_skill_graph
 
@@ -182,6 +182,7 @@ def create_app() -> FastAPI:
         backup_db()
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            await migrate_sqlite_schema(conn)
         graph = get_skill_graph()
         graph.from_file(GRAPH_PATH)
         logger.info("App started, DB ready, graph loaded (%d edges)", len(graph))

@@ -1,12 +1,32 @@
 """Agent 会话/消息/任务/文件 CRUD。"""
 
 import os
+import logging
 
 from sqlalchemy import delete, desc, select as _s
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent import AgentFile, AgentMessage, AgentSession, AgentTask
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
+
+# ── Task lifecycle ──
+
+VALID_TASK_TRANSITIONS = {
+    "pending":    {"running", "waiting_user", "cancelled"},
+    "running":    {"waiting_user", "done", "failed", "cancelled"},
+    "waiting_user": {"running", "done", "failed", "cancelled"},
+    "done":       set(),
+    "failed":     {"running", "cancelled"},  # retry or give up
+    "cancelled":  set(),
+}
+
+
+def validate_transition(current: str, next_status: str) -> None:
+    valid = VALID_TASK_TRANSITIONS.get(current, set())
+    if next_status not in valid:
+        raise ValueError(f"Invalid task status transition: {current} -> {next_status}")
 
 
 # ── Session ──
@@ -22,6 +42,27 @@ async def create_session(db: AsyncSession, user: User, title: str = "新对话")
 async def get_session(db: AsyncSession, session_id: int) -> AgentSession | None:
     r = await db.execute(_s(AgentSession).where(AgentSession.id == session_id))
     return r.scalar_one_or_none()
+
+
+async def update_session_planning_state(
+    db: AsyncSession,
+    session_id: int,
+    patch: dict,
+    *,
+    replace: bool = False,
+) -> AgentSession | None:
+    session = await get_session(db, session_id)
+    if session is None:
+        return None
+    if replace:
+        session.planning_state = patch
+    else:
+        state = dict(session.planning_state or {})
+        state.update(patch)
+        session.planning_state = state
+    await db.commit()
+    await db.refresh(session)
+    return session
 
 
 async def list_sessions(db: AsyncSession, user_id: int) -> list[AgentSession]:
@@ -91,26 +132,77 @@ async def count_messages(db: AsyncSession, session_id: int) -> int:
 async def create_task(
     db: AsyncSession, session_id: int, goal: str,
     parent_id: int | None = None, agent: str = "",
+    task_type: str | None = None, input_data: dict | None = None,
+    need_id: int | None = None, match_id: int | None = None,
+    file_id: int | None = None,
 ) -> AgentTask:
-    t = AgentTask(session_id=session_id, parent_task_id=parent_id, goal=goal, assigned_agent=agent)
+    t = AgentTask(
+        session_id=session_id, parent_task_id=parent_id, task_type=task_type,
+        goal=goal, assigned_agent=agent,
+        input_data=input_data, need_id=need_id, match_id=match_id,
+        file_id=file_id,
+    )
     db.add(t)
     await db.commit()
     await db.refresh(t)
     return t
 
 
-async def update_task(db: AsyncSession, task_id: int, status: str, result: dict | None = None, error: str | None = None) -> AgentTask | None:
+async def update_task(
+    db: AsyncSession, task_id: int, status: str,
+    result: dict | None = None, error: str | None = None,
+    error_code: str | None = None, increment_retry: bool = False,
+) -> AgentTask | None:
     r = await db.execute(_s(AgentTask).where(AgentTask.id == task_id))
     t = r.scalar_one_or_none()
     if t:
+        validate_transition(t.status, status)
         t.status = status
         if result is not None:
             t.result = result
         if error is not None:
             t.error = error
+        if error_code is not None:
+            t.error_code = error_code
+        if increment_retry:
+            t.retry_count = (t.retry_count or 0) + 1
         await db.commit()
         await db.refresh(t)
     return t
+
+
+async def update_task_input_data(
+    db: AsyncSession,
+    task_id: int,
+    input_data: dict,
+) -> AgentTask | None:
+    task = await get_task(db, task_id)
+    if task is None:
+        return None
+    task.input_data = input_data
+    await db.commit()
+    await db.refresh(task)
+    return task
+
+
+async def run_task(db: AsyncSession, task_id: int) -> AgentTask | None:
+    """Mark a task as running (creating a retry if it was failed)."""
+    r = await db.execute(_s(AgentTask).where(AgentTask.id == task_id))
+    t = r.scalar_one_or_none()
+    if t:
+        increment = t.status == "failed"
+        validate_transition(t.status, "running")
+        t.status = "running"
+        if increment:
+            t.retry_count = (t.retry_count or 0) + 1
+        await db.commit()
+        await db.refresh(t)
+    return t
+
+
+async def get_task(db: AsyncSession, task_id: int) -> AgentTask | None:
+    r = await db.execute(_s(AgentTask).where(AgentTask.id == task_id))
+    return r.scalar_one_or_none()
 
 
 async def get_tasks(db: AsyncSession, session_id: int) -> list[AgentTask]:
@@ -118,6 +210,48 @@ async def get_tasks(db: AsyncSession, session_id: int) -> list[AgentTask]:
         _s(AgentTask).where(AgentTask.session_id == session_id).order_by(AgentTask.created_at)
     )
     return list(r.scalars().all())
+
+
+def build_task_tree(tasks: list[AgentTask]) -> list[dict]:
+    """Build a parent-child task tree from a flat task list."""
+    task_map: dict[int, dict] = {}
+    roots: list[dict] = []
+
+    for t in tasks:
+        node = _task_to_dict(t)
+        node["children"] = []
+        task_map[t.id] = node
+
+    for t in tasks:
+        node = task_map[t.id]
+        if t.parent_task_id and t.parent_task_id in task_map:
+            task_map[t.parent_task_id]["children"].append(node)
+        else:
+            roots.append(node)
+
+    return roots
+
+
+def _task_to_dict(t: AgentTask) -> dict:
+    return {
+        "id": t.id,
+        "session_id": t.session_id,
+        "parent_task_id": t.parent_task_id,
+        "task_type": t.task_type,
+        "goal": t.goal,
+        "status": t.status,
+        "assigned_agent": t.assigned_agent,
+        "input_data": t.input_data,
+        "result": t.result,
+        "error": t.error,
+        "error_code": t.error_code,
+        "retry_count": t.retry_count or 0,
+        "need_id": t.need_id,
+        "match_id": t.match_id,
+        "file_id": t.file_id,
+        "created_at": t.created_at.isoformat() if t.created_at else None,
+        "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+    }
 
 
 # ── Files ──
@@ -151,6 +285,13 @@ async def save_file(
 async def get_file(db: AsyncSession, file_id: int) -> AgentFile | None:
     r = await db.execute(_s(AgentFile).where(AgentFile.id == file_id))
     return r.scalar_one_or_none()
+
+
+async def list_files(db: AsyncSession, session_id: int) -> list[AgentFile]:
+    r = await db.execute(
+        _s(AgentFile).where(AgentFile.session_id == session_id).order_by(desc(AgentFile.created_at))
+    )
+    return list(r.scalars().all())
 
 
 async def update_file_info(

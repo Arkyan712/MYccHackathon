@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, Float, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, String, Text, func
 from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -18,9 +18,9 @@ class Need(Base):
     description: Mapped[str] = mapped_column(Text)
     req_tags: Mapped[Optional[list]] = mapped_column(JSON)
     need_embedding: Mapped[Optional[list]] = mapped_column(JSON)
-    selection_mode: Mapped[Optional[str]] = mapped_column(String(20), default="single")  # single / multi
+    selection_mode: Mapped[Optional[str]] = mapped_column(String(20), default="single")
     selected_user_ids: Mapped[Optional[list]] = mapped_column(JSON, default=list)
-    status: Mapped[str] = mapped_column(String(20), default="开放")
+    status: Mapped[str] = mapped_column(String(20), default="\u5f00\u653e")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     user: Mapped["User"] = relationship()

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { Need, MatchResult, MatchProgress } from '@/types'
+import type { MatchProgress, MatchResult, Need, NeedApplication } from '@/types'
 import * as needsApi from '@/api/needs'
 import { useAuthStore } from './auth'
 
@@ -8,9 +8,12 @@ export const useNeedsStore = defineStore('needs', () => {
   const needs = ref<Need[]>([])
   const total = ref(0)
   const currentNeed = ref<Need | null>(null)
+  const currentApplications = ref<NeedApplication[]>([])
+  const myApplications = ref<NeedApplication[]>([])
   const matches = ref<MatchResult[]>([])
   const matchProgress = ref<MatchProgress[]>([])
   const loading = ref(false)
+  const applicationDrafts = ref<Record<number, string>>({})
   let activeEventSource: EventSource | null = null
   let sseErrorCount = 0
 
@@ -31,12 +34,64 @@ export const useNeedsStore = defineStore('needs', () => {
     return data
   }
 
+  async function fetchNeedDetail(needId: number) {
+    loading.value = true
+    try {
+      const { data } = await needsApi.getNeedDetail(needId)
+      currentNeed.value = data
+      return data
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function fetchNeedApplications(needId: number) {
+    const { data } = await needsApi.getNeedApplications(needId)
+    currentApplications.value = data.items
+    return data.items
+  }
+
+  async function fetchMyApplications() {
+    const { data } = await needsApi.getMyApplications()
+    myApplications.value = data.items
+    return data.items
+  }
+
+  async function applyToNeed(needId: number, message: string) {
+    const { data } = await needsApi.applyToNeed(needId, message)
+    await Promise.all([fetchNeedDetail(needId), fetchMyApplications()])
+    return data
+  }
+
+  async function reviewApplication(applicationId: number, accepted: boolean, ownerReply?: string) {
+    const { data } = accepted
+      ? await needsApi.acceptNeedApplication(applicationId, ownerReply)
+      : await needsApi.rejectNeedApplication(applicationId, ownerReply)
+    if (currentNeed.value) {
+      await Promise.all([fetchNeedDetail(currentNeed.value.id), fetchNeedApplications(currentNeed.value.id)])
+    }
+    return data
+  }
+
+  function setApplicationDraft(needId: number, text: string) {
+    applicationDrafts.value = { ...applicationDrafts.value, [needId]: text }
+  }
+
+  function consumeApplicationDraft(needId: number) {
+    const text = applicationDrafts.value[needId] || ''
+    const next = { ...applicationDrafts.value }
+    delete next[needId]
+    applicationDrafts.value = next
+    return text
+  }
+
   async function fetchMatches(needId: number) {
     loading.value = true
     try {
       const { data } = await needsApi.getMatches(needId)
       currentNeed.value = data.need
       matches.value = data.matches
+      return data
     } finally {
       loading.value = false
     }
@@ -55,12 +110,18 @@ export const useNeedsStore = defineStore('needs', () => {
     const eventSource = new EventSource(url)
     activeEventSource = eventSource
 
-    // 60s timeout to prevent indefinite wait
-    const timeout = setTimeout(() => {
+    const finish = () => {
+      if (activeEventSource === eventSource) {
+        activeEventSource = null
+      }
       if (eventSource.readyState !== EventSource.CLOSED) {
         eventSource.close()
-        matchProgress.value.push({ stage: 'error', message: '匹配超时，请点击刷新重试' })
       }
+    }
+
+    const timeout = setTimeout(() => {
+      finish()
+      matchProgress.value.push({ stage: 'error', message: '匹配超时，请点击刷新重试' })
     }, 60000)
 
     eventSource.onmessage = (event) => {
@@ -70,16 +131,16 @@ export const useNeedsStore = defineStore('needs', () => {
         if (data.stage === 'done' && data.data?.results) {
           matches.value = data.data.results as MatchResult[]
           clearTimeout(timeout)
-          eventSource.close()
+          finish()
         }
         if (data.stage === 'error') {
           clearTimeout(timeout)
-          eventSource.close()
+          finish()
         }
       } catch {
         matchProgress.value.push({ stage: 'error', message: '数据解析失败' })
         clearTimeout(timeout)
-        eventSource.close()
+        finish()
       }
     }
 
@@ -87,7 +148,7 @@ export const useNeedsStore = defineStore('needs', () => {
       sseErrorCount++
       if (sseErrorCount >= 3 || eventSource.readyState === EventSource.CLOSED) {
         clearTimeout(timeout)
-        eventSource.close()
+        finish()
         matchProgress.value.push({ stage: 'error', message: '连接失败，请点击刷新重试' })
       }
     }
@@ -102,6 +163,7 @@ export const useNeedsStore = defineStore('needs', () => {
       const { data } = await needsApi.refreshMatches(needId)
       currentNeed.value = data.need
       matches.value = data.matches
+      return data
     } finally {
       loading.value = false
     }
@@ -121,8 +183,29 @@ export const useNeedsStore = defineStore('needs', () => {
   }
 
   return {
-    needs, total, currentNeed, matches, matchProgress, loading,
-    fetchNeeds, createNeed, fetchMatches, streamMatches, refreshMatches,
-    submitFeedback, refineNeed, logBehavior,
+    needs,
+    total,
+    currentNeed,
+    currentApplications,
+    myApplications,
+    matches,
+    matchProgress,
+    loading,
+    applicationDrafts,
+    fetchNeeds,
+    createNeed,
+    fetchNeedDetail,
+    fetchNeedApplications,
+    fetchMyApplications,
+    applyToNeed,
+    reviewApplication,
+    setApplicationDraft,
+    consumeApplicationDraft,
+    fetchMatches,
+    streamMatches,
+    refreshMatches,
+    submitFeedback,
+    refineNeed,
+    logBehavior,
   }
 })

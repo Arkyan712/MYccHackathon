@@ -3,20 +3,53 @@ from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.agents.orchestrator import AgentOrchestrator
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.events import get_event_bus
 from app.guardrails.rate_limiter import get_rate_limiter
+from app.models.need import Need as NeedModel
 from app.models.user import User
-from sqlalchemy.orm import selectinload
-
-from app.schemas.need import NeedCreate, NeedListResponse, NeedResponse, NeedUpdate, SelectUsersRequest
 from app.schemas.match import FeedbackRequest
-from app.services import need_service, match_engine
+from app.schemas.need import (
+    NeedApplicationCreate,
+    NeedApplicationListResponse,
+    NeedApplicationReview,
+    NeedCreate,
+    NeedListResponse,
+    NeedResponse,
+    NeedUpdate,
+    SelectUsersRequest,
+)
+from app.services import match_engine, need_application_service, need_service
 
 router = APIRouter(prefix="/api/needs", tags=["needs"])
+
+
+async def _notify_matching_complete(need_id: int):
+    from app.core.database import async_session
+    from app.models.message import Message
+    from sqlalchemy import select as _s
+
+    async with async_session() as bg_db:
+        result = await bg_db.execute(_s(NeedModel).where(NeedModel.id == need_id))
+        need = result.scalar_one_or_none()
+        if need is None:
+            return
+
+        matches = await match_engine.get_matches(bg_db, need_id)
+        bg_db.add(
+            Message(
+                need_id=need_id,
+                sender_id=need.user_id,
+                receiver_id=need.user_id,
+                content=f"你的需求《{need.title}》匹配完成，共有{len(matches)}位候选人，点击查看结果。",
+                is_read=False,
+            )
+        )
+        await bg_db.commit()
 
 
 @router.post("", response_model=NeedResponse)
@@ -30,33 +63,63 @@ async def create_need(
     if not limiter.check_ip(request.client.host if request.client else "unknown"):
         raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
     need = await need_service.create_need(db, user, data, get_event_bus())
-    # 后台独立 session 执行匹配，避免父 session 关闭后访问
-    import asyncio as _a
-    _a.create_task(_run_matching_bg(need.id))
+    match_engine.schedule_matching(need.id, get_event_bus(), notifier=_notify_matching_complete)
     return need
 
 
-async def _run_matching_bg(need_id: int):
-    from app.core.database import async_session
-    from app.models.message import Message
-    async with async_session() as bg_db:
-        await match_engine.run_matching(bg_db, need_id, get_event_bus())
-        # Send notification message
-        from app.models.need import Need as _N
-        from sqlalchemy import select as _s
-        r = await bg_db.execute(_s(_N).where(_N.id == need_id))
-        need = r.scalar_one_or_none()
-        if need:
-            matches_r = await match_engine.get_matches(bg_db, need_id)
-            count = len(matches_r)
-            bg_db.add(Message(
-                need_id=need_id,
-                sender_id=need.user_id,
-                receiver_id=need.user_id,
-                content=f"你的需求『{need.title}』匹配完成，共{count}位候选人，点击查看结果。",
-                is_read=False,
-            ))
-            await bg_db.commit()
+@router.get("/applications/mine", response_model=NeedApplicationListResponse)
+async def list_my_applications(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    items = await need_application_service.list_my_applications(db, user.id)
+    return NeedApplicationListResponse(items=items)
+
+
+@router.post("/applications/{application_id}/accept")
+async def accept_application(
+    application_id: int,
+    data: NeedApplicationReview,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        application = await need_application_service.review_application(
+            db,
+            application_id=application_id,
+            owner=user,
+            accepted=True,
+            owner_reply=data.owner_reply,
+            event_bus=get_event_bus(),
+        )
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return application
+
+
+@router.post("/applications/{application_id}/reject")
+async def reject_application(
+    application_id: int,
+    data: NeedApplicationReview,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        application = await need_application_service.review_application(
+            db,
+            application_id=application_id,
+            owner=user,
+            accepted=False,
+            owner_reply=data.owner_reply,
+            event_bus=get_event_bus(),
+        )
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return application
 
 
 @router.get("", response_model=NeedListResponse)
@@ -65,9 +128,17 @@ async def list_needs(
     page_size: int = Query(20, ge=1, le=100),
     status: str | None = None,
     type: str | None = Query(None, alias="type"),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    items, total = await need_service.get_needs(db, page, page_size, status, type)
+    items, total = await need_service.get_needs(
+        db,
+        page,
+        page_size,
+        status,
+        type,
+        viewer_id=user.id,
+    )
     return NeedListResponse(items=items, total=total, page=page, page_size=page_size)
 
 
@@ -79,12 +150,61 @@ async def list_my_needs(
     return await need_service.get_my_needs(db, user.id)
 
 
+@router.get("/selected/mine", response_model=list[NeedResponse])
+async def list_my_selected_needs(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await need_service.get_my_selected_needs(db, user.id)
+
+
 @router.get("/{need_id}", response_model=NeedResponse)
-async def get_need(need_id: int, db: AsyncSession = Depends(get_db)):
-    need = await need_service.get_need_detail(db, need_id)
+async def get_need(
+    need_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    need = await need_service.get_need_detail(db, need_id, viewer_id=user.id)
     if need is None:
         raise HTTPException(404, "需求不存在")
     return need
+
+
+@router.post("/{need_id}/apply")
+async def apply_to_need(
+    need_id: int,
+    data: NeedApplicationCreate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    need = await _get_need_orm(db, need_id)
+    if need is None:
+        raise HTTPException(404, "需求不存在")
+    try:
+        return await need_application_service.create_application(
+            db,
+            need=need,
+            applicant=user,
+            message=data.message,
+            event_bus=get_event_bus(),
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/{need_id}/applications", response_model=NeedApplicationListResponse)
+async def get_need_applications(
+    need_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    need = await _get_need_orm(db, need_id)
+    if need is None:
+        raise HTTPException(404, "需求不存在")
+    if need.user_id != user.id:
+        raise HTTPException(403, "只能查看自己需求收到的申请")
+    items = await need_application_service.list_need_applications(db, need=need)
+    return NeedApplicationListResponse(items=items)
 
 
 @router.put("/{need_id}", response_model=NeedResponse)
@@ -94,7 +214,7 @@ async def update_need(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    need = await need_service.get_need_detail(db, need_id)
+    need = await need_service.get_need_detail(db, need_id, viewer_id=user.id)
     if need is None:
         raise HTTPException(404, "需求不存在")
     if need.user_id != user.id:
@@ -108,12 +228,13 @@ async def delete_need(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    need = await need_service.get_need_detail(db, need_id)
+    need = await need_service.get_need_detail(db, need_id, viewer_id=user.id)
     if need is None:
         raise HTTPException(404, "需求不存在")
     if need.user_id != user.id:
         raise HTTPException(403, "只能删除自己的需求")
     orm_need = await _get_need_orm(db, need_id)
+    await match_engine.cancel_matching(need_id)
     await need_service.delete_need(db, orm_need)
     return {"ok": True}
 
@@ -124,7 +245,7 @@ async def close_need(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    need = await need_service.get_need_detail(db, need_id)
+    need = await need_service.get_need_detail(db, need_id, viewer_id=user.id)
     if need is None:
         raise HTTPException(404, "需求不存在")
     if need.user_id != user.id:
@@ -140,13 +261,13 @@ async def select_matched_users(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    need_detail = await need_service.get_need_detail(db, need_id)
+    need_detail = await need_service.get_need_detail(db, need_id, viewer_id=user.id)
     if need_detail is None:
         raise HTTPException(404, "需求不存在")
     if need_detail.user_id != user.id:
         raise HTTPException(403, "只能为自己的需求选择匹配用户")
     orm_need = await _get_need_orm(db, need_id)
-    return await need_service.select_users(db, orm_need, data)
+    return await need_service.select_users(db, orm_need, data, get_event_bus())
 
 
 @router.post("/{need_id}/deselect/{target_user_id}", response_model=NeedResponse)
@@ -156,7 +277,7 @@ async def deselect_matched_user(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    need_detail = await need_service.get_need_detail(db, need_id)
+    need_detail = await need_service.get_need_detail(db, need_id, viewer_id=user.id)
     if need_detail is None:
         raise HTTPException(404, "需求不存在")
     if need_detail.user_id != user.id:
@@ -166,11 +287,12 @@ async def deselect_matched_user(
 
 
 async def _get_need_orm(db: AsyncSession, need_id: int):
-    """Get raw ORM Need object for mutations."""
     from sqlalchemy import select as _s
-    from app.models.need import Need as _N
-    r = await db.execute(_s(_N).options(selectinload(_N.user)).where(_N.id == need_id))
-    return r.unique().scalar_one_or_none()
+
+    result = await db.execute(
+        _s(NeedModel).options(selectinload(NeedModel.user)).where(NeedModel.id == need_id)
+    )
+    return result.unique().scalar_one_or_none()
 
 
 @router.get("/{need_id}/matches")
@@ -179,33 +301,40 @@ async def get_matches(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    need = await need_service.get_need_detail(db, need_id)
+    need = await need_service.get_need_detail(db, need_id, viewer_id=user.id)
     if need is None:
         raise HTTPException(404, "需求不存在")
     if need.user_id != user.id:
         raise HTTPException(403, "只能查看自己需求的匹配结果")
 
     matches = await match_engine.get_matches(db, need_id)
-    if not matches:
-        # Fallback: run matching on demand
+    if not matches and not match_engine.is_matching_active(need_id):
         await match_engine.run_matching(db, need_id, get_event_bus())
         matches = await match_engine.get_matches(db, need_id)
 
-    return {"need": need.model_dump(), "matches": [m.model_dump() for m in matches]}
+    return {
+        "need": need.model_dump(),
+        "matches": [match.model_dump() for match in matches],
+        "matching_active": match_engine.is_matching_active(need_id),
+    }
 
 
 @router.get("/{need_id}/matches/stream")
-async def stream_matches(need_id: int, token: str = Query(""), db: AsyncSession = Depends(get_db)):
-    """SSE 流式匹配进度。支持 token 查询参数（EventSource 不支持自定义 header）。"""
+async def stream_matches(
+    need_id: int,
+    token: str = Query(""),
+    db: AsyncSession = Depends(get_db),
+):
     user_id = None
     if token:
         from app.core.security import decode_access_token
+
         payload = decode_access_token(token)
         if payload is None:
             raise HTTPException(401, "Invalid token")
         user_id = payload.get("user_id")
 
-    need = await need_service.get_need_detail(db, need_id)
+    need = await need_service.get_need_detail(db, need_id, viewer_id=user_id)
     if need is None:
         raise HTTPException(404, "需求不存在")
     if user_id is not None and need.user_id != user_id:
@@ -224,15 +353,20 @@ async def refresh_matches(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    need = await need_service.get_need_detail(db, need_id)
+    need = await need_service.get_need_detail(db, need_id, viewer_id=user.id)
     if need is None:
         raise HTTPException(404, "需求不存在")
     if need.user_id != user.id:
         raise HTTPException(403, "只能刷新自己需求的匹配结果")
 
+    await match_engine.cancel_matching(need_id)
     await match_engine.run_matching(db, need_id, get_event_bus())
     matches = await match_engine.get_matches(db, need_id)
-    return {"need": need.model_dump(), "matches": [m.model_dump() for m in matches]}
+    return {
+        "need": need.model_dump(),
+        "matches": [match.model_dump() for match in matches],
+        "matching_active": False,
+    }
 
 
 @router.post("/matches/{match_id}/feedback")
@@ -252,8 +386,7 @@ async def refine_need(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """ConciergeAgent: 分析需求并返回细化追问。"""
-    need = await need_service.get_need_detail(db, need_id)
+    need = await need_service.get_need_detail(db, need_id, viewer_id=user.id)
     if need is None:
         raise HTTPException(404, "需求不存在")
     result = await AgentOrchestrator.run_concierge(need.description, need.req_tags)
@@ -261,7 +394,7 @@ async def refine_need(
 
 
 class ChatRequest(BaseModel):
-    messages: list[dict] = []  # [{role, content}]
+    messages: list[dict] = []
 
 
 @router.post("/{need_id}/chat")
@@ -271,20 +404,18 @@ async def chat_with_concierge(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """多轮对话：与 ConciergeAgent 聊天细化需求（含已匹配结果上下文）。"""
-    need = await need_service.get_need_detail(db, need_id)
+    need = await need_service.get_need_detail(db, need_id, viewer_id=user.id)
     if need is None:
         raise HTTPException(404, "需求不存在")
     if need.user_id != user.id:
-        raise HTTPException(403, "只能对自己的需求进行AI对话")
+        raise HTTPException(403, "只能对自己需求进行AI对话")
 
-    # Fetch existing matches for context
-    from app.services.match_engine import get_matches
-    match_list = await get_matches(db, need_id)
-    match_dicts = [m.model_dump() for m in match_list] if match_list else []
-
+    match_list = await match_engine.get_matches(db, need_id)
     reply = await AgentOrchestrator.run_concierge_chat(
-        need.description, need.req_tags or [], data.messages, match_dicts
+        need.description,
+        need.req_tags or [],
+        data.messages,
+        [match.model_dump() for match in match_list] if match_list else [],
     )
     return {"reply": reply}
 
@@ -306,7 +437,6 @@ async def polish_description(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """AI 润色需求描述（含用户个性化上下文）。"""
     from app.adapters.deepseek_adapter import DeepSeekChatAdapter
     from app.integrations.client import get_ai_client
     from app.integrations.model_router import route
@@ -339,7 +469,6 @@ async def generate_description(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """AI 根据标题生成需求描述（含用户个性化上下文）。"""
     from app.adapters.deepseek_adapter import DeepSeekChatAdapter
     from app.integrations.client import get_ai_client
     from app.integrations.model_router import route
@@ -377,19 +506,17 @@ async def log_behavior(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """记录用户行为（查看匹配/点击联系等）。"""
     from app.models.behavior import UserBehaviorLog
-    log = UserBehaviorLog(
-        user_id=user.id,
-        event_type=data.event_type,
-        target_user_id=data.target_user_id,
-        need_id=data.need_id,
-    )
-    db.add(log)
-    await db.commit()
-
-    # Check reflection threshold
     from app.services.reflection_service import check_and_reflect
-    await check_and_reflect(db, user.id)
 
+    db.add(
+        UserBehaviorLog(
+            user_id=user.id,
+            event_type=data.event_type,
+            target_user_id=data.target_user_id,
+            need_id=data.need_id,
+        )
+    )
+    await db.commit()
+    await check_and_reflect(db, user.id)
     return {"ok": True}

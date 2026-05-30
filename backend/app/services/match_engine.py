@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from collections.abc import Awaitable, Callable
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,12 +16,86 @@ from app.schemas.match import MatchResult
 
 logger = logging.getLogger(__name__)
 
+_active_matching_tasks: dict[int, asyncio.Task] = {}
+_matching_cancel_events: dict[int, asyncio.Event] = {}
 
-async def run_matching(db: AsyncSession, need_id: int, event_bus: EventBus | None = None):
+
+def is_matching_active(need_id: int) -> bool:
+    task = _active_matching_tasks.get(need_id)
+    return bool(task and not task.done())
+
+
+def schedule_matching(
+    need_id: int,
+    event_bus: EventBus | None = None,
+    *,
+    notifier: Callable[[int], Awaitable[None]] | None = None,
+) -> asyncio.Task | None:
+    existing = _active_matching_tasks.get(need_id)
+    if existing and not existing.done():
+        return existing
+
+    cancel_event = asyncio.Event()
+    _matching_cancel_events[need_id] = cancel_event
+
+    async def runner() -> None:
+        from app.core.database import async_session
+
+        try:
+            async with async_session() as bg_db:
+                await run_matching(bg_db, need_id, event_bus, cancel_event=cancel_event)
+                if cancel_event.is_set():
+                    return
+                if notifier is not None:
+                    await notifier(need_id)
+        except asyncio.CancelledError:
+            logger.info("Matching task cancelled for need_id=%s", need_id)
+            raise
+        except Exception:
+            logger.exception("Background matching failed for need_id=%s", need_id)
+        finally:
+            _active_matching_tasks.pop(need_id, None)
+            _matching_cancel_events.pop(need_id, None)
+
+    task = asyncio.create_task(runner(), name=f"need-matching-{need_id}")
+    _active_matching_tasks[need_id] = task
+    return task
+
+
+async def cancel_matching(need_id: int) -> bool:
+    task = _active_matching_tasks.get(need_id)
+    cancel_event = _matching_cancel_events.get(need_id)
+    if cancel_event is not None:
+        cancel_event.set()
+
+    if task is None or task.done():
+        _active_matching_tasks.pop(need_id, None)
+        _matching_cancel_events.pop(need_id, None)
+        return False
+
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        logger.exception("Error while awaiting cancelled matching task for need_id=%s", need_id)
+    return True
+
+
+async def run_matching(
+    db: AsyncSession,
+    need_id: int,
+    event_bus: EventBus | None = None,
+    *,
+    cancel_event: asyncio.Event | None = None,
+):
     """执行完整匹配 pipeline，写入 matches 表。"""
     result = await db.execute(select(Need).where(Need.id == need_id))
     need = result.scalar_one_or_none()
     if need is None:
+        return
+    if cancel_event and cancel_event.is_set():
         return
 
     need_description = need.description
@@ -35,6 +110,13 @@ async def run_matching(db: AsyncSession, need_id: int, event_bus: EventBus | Non
         exclude_user_id=need.user_id,
         _event_bus=event_bus,
     )
+    if cancel_event and cancel_event.is_set():
+        return
+
+    latest_need_result = await db.execute(select(Need).where(Need.id == need_id))
+    latest_need = latest_need_result.scalar_one_or_none()
+    if latest_need is None:
+        return
 
     # Delete old matches
     await db.execute(delete(Match).where(Match.need_id == need_id))

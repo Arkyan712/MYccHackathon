@@ -29,7 +29,7 @@ async function save() {
   saving.value = true
   try {
     await settingsApi.updateSettings({ deepseek_api_key: key })
-    ElMessage.success('API Key 已保存，重启服务后生效')
+    ElMessage.success('API Key 已保存并立即生效')
     apiKey.value = ''
     load()
   } catch (e: any) {
@@ -67,8 +67,8 @@ async function save() {
         <el-button type="primary" :loading="saving" @click="save">保存</el-button>
       </div>
 
-      <el-alert type="warning" :closable="false" show-icon style="margin-top:12px">
-        修改 API Key 后需要重启后端服务才能生效。
+      <el-alert type="success" :closable="false" show-icon style="margin-top:12px">
+        修改 API Key 后会立即刷新运行中的 AI 服务配置，无需重启后端服务。
       </el-alert>
     </el-card>
 

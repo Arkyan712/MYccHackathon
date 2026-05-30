@@ -57,7 +57,13 @@ class TagSkill(BaseSkill):
                 {"role": "user", "content": f"现在处理: {text}"},
             ]
 
-            tags = await adapter.chat_with_json(messages, temperature=cfg["temperature"], max_tokens=cfg["max_tokens"])
+            tags = await adapter.chat_with_json(
+                messages,
+                temperature=cfg["temperature"],
+                max_tokens=cfg["max_tokens"],
+                timeout=8,
+                max_retries=0,
+            )
             if isinstance(tags, list):
                 return {"tags": tags, "fallback": False}
             if isinstance(tags, dict) and "tags" in tags:

@@ -1,5 +1,5 @@
 import api from './client'
-import type { Need, MatchResult } from '@/types'
+import type { MatchResult, Need, NeedApplication } from '@/types'
 
 export function createNeed(data: { type: string; title: string; description: string; selection_mode?: string }) {
   return api.post<Need>('/needs', data)
@@ -13,12 +13,32 @@ export function getNeedDetail(id: number) {
   return api.get<Need>(`/needs/${id}`)
 }
 
+export function applyToNeed(needId: number, message: string) {
+  return api.post<NeedApplication>(`/needs/${needId}/apply`, { message })
+}
+
+export function getNeedApplications(needId: number) {
+  return api.get<{ items: NeedApplication[] }>(`/needs/${needId}/applications`)
+}
+
+export function acceptNeedApplication(applicationId: number, ownerReply?: string) {
+  return api.post<NeedApplication>(`/needs/applications/${applicationId}/accept`, { owner_reply: ownerReply })
+}
+
+export function rejectNeedApplication(applicationId: number, ownerReply?: string) {
+  return api.post<NeedApplication>(`/needs/applications/${applicationId}/reject`, { owner_reply: ownerReply })
+}
+
+export function getMyApplications() {
+  return api.get<{ items: NeedApplication[] }>('/needs/applications/mine')
+}
+
 export function getMatches(needId: number) {
-  return api.get<{ need: Need; matches: MatchResult[] }>(`/needs/${needId}/matches`)
+  return api.get<{ need: Need; matches: MatchResult[]; matching_active?: boolean }>(`/needs/${needId}/matches`)
 }
 
 export function refreshMatches(needId: number) {
-  return api.post<{ need: Need; matches: MatchResult[] }>(`/needs/${needId}/matches/refresh`)
+  return api.post<{ need: Need; matches: MatchResult[]; matching_active?: boolean }>(`/needs/${needId}/matches/refresh`)
 }
 
 export function getMatchStreamUrl(needId: number) {
@@ -43,6 +63,10 @@ export function generateDescription(data: { need_type: string; title: string }) 
 
 export function getMyNeeds() {
   return api.get<Need[]>('/needs/mine')
+}
+
+export function getMySelectedNeeds() {
+  return api.get<Need[]>('/needs/selected/mine')
 }
 
 export function updateNeed(id: number, data: { title?: string; description?: string; status?: string }) {

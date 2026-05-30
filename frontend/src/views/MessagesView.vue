@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, inject } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, inject } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { ConversationPreview, MessageItem } from '@/types'
@@ -37,11 +37,15 @@ onMounted(() => {
   window.addEventListener('resize', onResize)
 })
 
+onUnmounted(() => {
+  window.removeEventListener('resize', onResize)
+})
+
 watch(
-  () => route.params.userId,
-  (id) => {
+  () => [route.params.userId, route.query.needId],
+  ([id, needId]) => {
     if (id) {
-      const needIdFromQuery = Number(route.query.needId) || 0
+      const needIdFromQuery = Number(needId) || 0
       selectConversation(Number(id), needIdFromQuery)
     }
   },
@@ -177,49 +181,37 @@ async function handleSend(content: string) {
 
 <style scoped>
 .messages-page {
-  padding: 24px;
-  height: calc(100vh - 64px);
+  padding: var(--space-lg);
+  height: calc(100vh - var(--topbar-height) - 2 * var(--space-lg));
   display: flex;
   flex-direction: column;
 }
 
-/* Page Header */
 .page-header {
-  margin-bottom: 16px;
+  margin-bottom: var(--space-md);
   flex-shrink: 0;
 }
 
 .page-title {
   font-size: 20px;
   font-weight: 600;
-  color: #1f2328;
+  color: var(--text-primary);
   margin: 0;
-  line-height: 1.4;
 }
 
-/* Card */
 .messages-card {
   flex: 1;
   min-height: 0;
-  border: 1px solid #e8e8e8;
-  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
-.messages-card :deep(.el-card__body) {
-  height: 100%;
-}
+.messages-card :deep(.el-card__body) { height: 100%; }
 
-/* Layout */
-.msg-layout {
-  display: flex;
-  height: 100%;
-}
+.msg-layout { display: flex; height: 100%; }
 
-.msg-sidebar {
-  width: 280px;
-  flex-shrink: 0;
-}
+.msg-sidebar { width: 280px; flex-shrink: 0; }
 
 .msg-main {
   flex: 1;
@@ -229,18 +221,14 @@ async function handleSend(content: string) {
   min-height: 0;
 }
 
-/* Mobile */
 .mobile-back-row {
   padding: 12px 16px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--border-color-light);
   flex-shrink: 0;
-  background: #fafafa;
+  background: var(--bg-surface-hover);
 }
 
-.chat-container {
-  flex: 1;
-  min-height: 0;
-}
+.chat-container { flex: 1; min-height: 0; }
 
 .empty-placeholder {
   flex: 1;
@@ -249,32 +237,18 @@ async function handleSend(content: string) {
   justify-content: center;
 }
 
-/* Mobile responsive */
 @media (max-width: 767px) {
   .messages-page {
-    padding: 16px;
-    height: calc(100vh - 56px);
+    padding: var(--space-md);
+    height: calc(100vh - var(--topbar-height));
   }
 
-  .msg-layout {
-    position: relative;
-  }
+  .msg-layout { position: relative; }
 
-  .msg-sidebar {
-    width: 100%;
-    display: none;
-  }
+  .msg-sidebar { width: 100%; display: none; }
+  .msg-sidebar.is-active { display: block; }
 
-  .msg-sidebar.is-active {
-    display: block;
-  }
-
-  .msg-main {
-    display: none;
-  }
-
-  .msg-main.is-active {
-    display: flex;
-  }
+  .msg-main { display: none; }
+  .msg-main.is-active { display: flex; }
 }
 </style>

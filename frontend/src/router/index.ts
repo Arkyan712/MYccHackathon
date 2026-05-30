@@ -29,6 +29,18 @@ const router = createRouter({
       meta: { auth: true },
     },
     {
+      path: '/needs/applications',
+      name: 'MyApplications',
+      component: () => import('@/views/MyApplicationsView.vue'),
+      meta: { auth: true },
+    },
+    {
+      path: '/needs/:id',
+      name: 'NeedDetail',
+      component: () => import('@/views/NeedDetailView.vue'),
+      meta: { auth: true },
+    },
+    {
       path: '/needs/manage',
       name: 'NeedManage',
       component: () => import('@/views/NeedManageView.vue'),
