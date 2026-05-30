@@ -37,14 +37,27 @@ cp .env.example .env
 
 也可以在启动后通过网页「系统设置」页面配置（需重启服务）。
 
-### 3. 初始化数据库
+### 3. 下载本地模型（可选但推荐）
+
+匹配精度依赖 Qwen3 本地模型。不下载也能运行（使用哈希降级方案），但匹配效果会差很多。
+
+```bash
+cd backend
+python download_models.py   # 一键下载 ~1.5GB
+```
+
+或手动下载到 `backend/model_cache/`：
+- [Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B)
+- [Qwen3-Reranker-0.6B](https://huggingface.co/Qwen/Qwen3-Reranker-0.6B)
+
+### 4. 初始化数据库
 
 ```bash
 cd backend
 python seed.py    # 首次运行灌入演示数据（后续运行不会删数据）
 ```
 
-### 4. 启动服务
+### 5. 启动服务
 
 ```bash
 # 后端 (端口 8000)
