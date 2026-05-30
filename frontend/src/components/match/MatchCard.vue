@@ -36,16 +36,16 @@ const scoreColor = computed(() => {
 </template>
 
 <style scoped>
-.match-card { margin-bottom: 16px; transition: transform 0.15s; }
-.match-card:hover { transform: translateY(-2px); }
+.match-card { margin-bottom: 16px; transition: all var(--transition-normal); border: 1px solid var(--card-border) !important; border-radius: var(--radius-lg) !important; }
+.match-card:hover { transform: translateY(-2px); box-shadow: var(--card-shadow-hover) !important; }
 .match-top { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .rank { font-size: 22px; width: 36px; text-align: center; flex-shrink: 0; }
 .user-info { flex: 1; display: flex; flex-direction: column; }
-.user-name { font-size: 16px; font-weight: 600; }
-.user-school { font-size: 12px; color: rgba(0,0,0,0.45); }
+.user-name { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+.user-school { font-size: 12px; color: var(--text-secondary); }
 .score-col { text-align: right; }
 .score-num { font-size: 30px; font-weight: 700; }
-.score-pct { font-size: 14px; color: rgba(0,0,0,0.45); }
+.score-pct { font-size: 14px; color: var(--text-secondary); }
 .skill-tags { margin-bottom: 10px; }
-.ai-reason { border-left: 3px solid #e8e8e8; padding: 8px 16px; margin: 0 0 14px 0; font-size: 13px; color: rgba(0,0,0,0.65); font-style: italic; line-height: 1.6; }
+.ai-reason { border-left: 3px solid var(--accent); padding: 8px 16px; margin: 0 0 14px 0; font-size: 13px; color: var(--text-secondary); font-style: italic; line-height: 1.6; background: var(--accent-light); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
 </style>

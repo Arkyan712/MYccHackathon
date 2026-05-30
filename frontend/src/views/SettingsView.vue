@@ -81,12 +81,12 @@ async function save() {
 
 <style scoped>
 .settings-page { max-width: 600px; margin: 0 auto; padding: 24px 16px; }
-.settings-page h2 { font-size: 20px; font-weight: 600; margin-bottom: 20px; }
-.section-card { border: 1px solid #e8e8e8; border-radius: 8px; }
-.card-title { font-size: 15px; font-weight: 600; }
+.settings-page h2 { font-size: 22px; font-weight: 700; margin-bottom: 20px; color: var(--text-primary); }
+.section-card { border: 1px solid var(--card-border) !important; border-radius: var(--radius-lg) !important; box-shadow: var(--card-shadow) !important; }
+.card-title { font-size: 15px; font-weight: 700; color: var(--text-primary); }
 .setting-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.setting-label { font-size: 14px; color: #1f2328; min-width: 100px; }
+.setting-label { font-size: 14px; color: var(--text-primary); min-width: 100px; font-weight: 500; }
 .key-input { flex: 1; }
-.hint { font-size: 13px; color: #656d76; }
-.hint a { color: #0969da; }
+.hint { font-size: 13px; color: var(--text-secondary); }
+.hint a { color: var(--primary); font-weight: 500; }
 </style>

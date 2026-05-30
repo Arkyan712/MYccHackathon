@@ -44,20 +44,20 @@ const msgs = computed(() => {
 </template>
 
 <style scoped>
-.progress-card { margin-bottom: 20px; }
+.progress-card { margin-bottom: 20px; border: 1px solid var(--card-border) !important; border-radius: var(--radius-lg) !important; }
 .step-row { display: flex; align-items: flex-start; gap: 14px; padding: 8px 0; }
 .step-dot {
   width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  font-size: 14px; font-weight: 600; border: 2px solid #d9d9d9; color: #bfbfbf; flex-shrink: 0;
-  transition: all 0.3s;
+  font-size: 14px; font-weight: 600; border: 2px solid var(--card-border); color: var(--text-muted); flex-shrink: 0;
+  transition: all var(--transition-normal);
 }
-.step-dot.done { background: #52c41a; border-color: #52c41a; color: #fff; }
-.step-dot.active { border-color: #0969da; color: #0969da; box-shadow: 0 0 0 3px rgba(9,105,218,0.12); }
-.step-dot.finished { background: #52c41a; border-color: #52c41a; color: #fff; }
-.dot-pulse { width: 8px; height: 8px; background: #0969da; border-radius: 50%; animation: pulse 1s infinite; }
+.step-dot.done { background: var(--success); border-color: var(--success); color: #fff; }
+.step-dot.active { border-color: var(--primary); color: var(--primary); box-shadow: var(--shadow-glow-blue); }
+.step-dot.finished { background: var(--success); border-color: var(--success); color: #fff; }
+.dot-pulse { width: 8px; height: 8px; background: var(--primary); border-radius: 50%; animation: pulse 1s infinite; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 .step-info { display: flex; flex-direction: column; padding-top: 4px; }
-.step-label { font-size: 14px; font-weight: 500; color: rgba(0,0,0,0.45); }
-.step-label.active { color: rgba(0,0,0,0.85); font-weight: 600; }
-.step-msg { font-size: 12px; color: rgba(0,0,0,0.45); margin-top: 2px; }
+.step-label { font-size: 14px; font-weight: 500; color: var(--text-secondary); }
+.step-label.active { color: var(--text-primary); font-weight: 600; }
+.step-msg { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
 </style>

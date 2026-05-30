@@ -95,12 +95,7 @@ async function handleRegister() {
 </script>
 
 <template>
-  <div class="login-page">
-    <!-- Decorative top bar -->
-    <div class="login-topbar">
-      <span class="topbar-brand">AI Campus</span>
-    </div>
-
+  <div class="login-page" :class="activeTab === 'register' ? 'bg-register' : 'bg-login'">
     <div class="login-wrapper">
       <!-- Left branding panel -->
       <div class="login-branding">
@@ -211,25 +206,16 @@ async function handleRegister() {
 <style scoped>
 .login-page {
   min-height: 100vh;
-  background: #f0f2f5;
   display: flex;
   flex-direction: column;
 }
 
-.login-topbar {
-  height: 56px;
-  display: flex;
-  align-items: center;
-  padding: 0 32px;
-  background: #fff;
-  border-bottom: 1px solid #e8e8e8;
-  flex-shrink: 0;
+.bg-login {
+  background: linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.5)), url('/assets/dl.jpg') center/cover no-repeat;
 }
 
-.topbar-brand {
-  font-size: 16px;
-  font-weight: 700;
-  color: #0969da;
+.bg-register {
+  background: linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.5)), url('/assets/zc.jpg') center/cover no-repeat;
 }
 
 .login-wrapper {
@@ -250,14 +236,14 @@ async function handleRegister() {
 .branding-title {
   font-size: 28px;
   font-weight: 700;
-  color: rgba(0, 0, 0, 0.85);
+  color: #ffffff;
   margin: 0 0 16px;
   line-height: 1.3;
 }
 
 .branding-desc {
   font-size: 14px;
-  color: rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.65);
   line-height: 1.8;
   margin: 0 0 32px;
 }
@@ -273,23 +259,26 @@ async function handleRegister() {
   align-items: center;
   gap: 10px;
   font-size: 14px;
-  color: rgba(0, 0, 0, 0.65);
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .feature-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #0969da;
+  background: var(--primary-gradient);
   flex-shrink: 0;
 }
 
 /* ---- Right card ---- */
 .login-card {
   width: 420px;
-  border: 1px solid #e8e8e8;
-  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: var(--radius-xl) !important;
   padding: 8px;
+  background: rgba(255, 255, 255, 0.92) !important;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25) !important;
 }
 
 .login-card :deep(.el-card__body) {
@@ -303,13 +292,13 @@ async function handleRegister() {
 .card-title {
   font-size: 20px;
   font-weight: 600;
-  color: rgba(0, 0, 0, 0.85);
+  color: var(--text-primary);
   margin: 0 0 4px;
 }
 
 .card-subtitle {
   font-size: 14px;
-  color: rgba(0, 0, 0, 0.45);
+  color: var(--text-secondary);
   margin: 0;
 }
 
@@ -334,30 +323,28 @@ async function handleRegister() {
   font-weight: 600;
 }
 
-.login-tabs :deep(.el-tabs__active-bar) {
-  background-color: #0969da;
-}
-
 /* ---- Form ---- */
 :deep(.el-form-item__label) {
   font-size: 13px;
-  color: rgba(0, 0, 0, 0.85);
+  color: var(--text-primary);
   padding-bottom: 4px;
 }
 
 .submit-btn {
   width: 100%;
-  height: 40px;
+  height: 44px;
   font-size: 15px;
-  font-weight: 500;
-  border-radius: 6px;
-  background: #0969da;
-  border-color: #0969da;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  background: var(--primary-gradient) !important;
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(126, 172, 204, 0.25) !important;
+  transition: all var(--transition-fast) !important;
 }
 
 .submit-btn:hover {
-  background: #0858b5;
-  border-color: #0858b5;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(126, 172, 204, 0.4) !important;
 }
 
 /* ---- Responsive ---- */

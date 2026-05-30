@@ -55,73 +55,21 @@ function formatPreviewTime(ts: string): string {
 </template>
 
 <style scoped>
-.conv-list {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  border-right: 1px solid #f0f0f0;
-  background: #fff;
-}
-
-.conv-scroll {
-  flex: 1;
-  overflow-y: auto;
-}
-
+.conv-list { height: 100%; display: flex; flex-direction: column; background: #fff; }
+.conv-scroll { flex: 1; overflow-y: auto; }
 .conv-item {
-  padding: 14px 16px;
-  cursor: pointer;
-  border-bottom: 1px solid #f5f5f5;
-  transition: background-color 0.15s ease;
+  padding: 14px 16px; cursor: pointer; border-bottom: 1px solid #f5f5f5;
+  transition: all var(--transition-fast);
 }
-
-.conv-item:hover {
-  background-color: #f6f8fa;
-}
-
+.conv-item:hover { background: var(--primary-light); }
 .conv-item.active {
-  background-color: #f0f6ff;
-  border-left: 3px solid #0969da;
+  background: var(--primary-light);
+  border-left: 3px solid var(--primary);
   padding-left: 13px;
 }
-
-.conv-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
-
-.conv-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1f2328;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.conv-time {
-  font-size: 12px;
-  color: #8b949e;
-  flex-shrink: 0;
-  margin-left: 8px;
-}
-
-.conv-preview {
-  font-size: 13px;
-  color: #656d76;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  line-height: 1.4;
-}
-
-.conv-empty-wrapper {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
+.conv-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.conv-name { font-size: 14px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-time { font-size: 12px; color: var(--text-muted); flex-shrink: 0; margin-left: 8px; }
+.conv-preview { font-size: 13px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.4; }
+.conv-empty-wrapper { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; }
 </style>

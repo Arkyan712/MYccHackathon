@@ -83,55 +83,17 @@ function handleInputBlur() {
 </template>
 
 <style scoped>
-.tag-editor {
-  padding: 4px 0;
-}
-
-.tag-list {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  min-height: 36px;
-}
-
-.tag-item {
-  font-size: 12px;
-  height: 28px;
-  line-height: 26px;
-  border-radius: 4px;
-  margin: 0;
-}
-
-.tag-item :deep(.el-tag__close) {
-  color: #656d76;
-}
-
-.tag-item :deep(.el-tag__close:hover) {
-  color: #1f2328;
-  background: rgba(0, 0, 0, 0.06);
-}
-
-.tag-input {
-  width: 120px;
-}
-
-.tag-input :deep(.el-input__inner) {
-  height: 28px;
-  font-size: 12px;
-}
-
+.tag-editor { padding: 4px 0; }
+.tag-list { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 36px; }
+.tag-item { font-size: 12px; height: 28px; line-height: 26px; border-radius: var(--radius-sm); margin: 0; }
+.tag-item :deep(.el-tag__close) { color: var(--text-secondary); }
+.tag-item :deep(.el-tag__close:hover) { color: var(--text-primary); background: rgba(0, 0, 0, 0.06); }
+.tag-input { width: 120px; }
+.tag-input :deep(.el-input__inner) { height: 28px; font-size: 12px; }
 .add-tag-btn {
-  font-size: 12px;
-  height: 28px;
-  padding: 0 12px;
-  border: 1px dashed #c0c4cc;
-  border-radius: 4px;
-  color: #656d76;
+  font-size: 12px; height: 28px; padding: 0 12px;
+  border: 1px dashed var(--card-border); border-radius: var(--radius-sm);
+  color: var(--text-secondary);
 }
-
-.add-tag-btn:hover {
-  color: #0969da;
-  border-color: #0969da;
-}
+.add-tag-btn:hover { color: var(--primary); border-color: var(--primary); }
 </style>
