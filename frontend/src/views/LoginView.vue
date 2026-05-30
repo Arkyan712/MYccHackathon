@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, watch, onMounted, computed } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import bgLogin from '@/assets/dl.jpg'
+import bgRegister from '@/assets/zc.jpg'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 
 const activeTab = ref('login')
+const currentBg = computed(() => activeTab.value === 'register' ? bgRegister : bgLogin)
 const loading = ref(false)
 const loginFormRef = ref<FormInstance>()
 const registerFormRef = ref<FormInstance>()
@@ -68,6 +72,12 @@ function resetRegisterForm() {
   registerFormRef.value?.resetFields()
 }
 
+onMounted(() => {
+  if (route.query.tab === 'register') {
+    activeTab.value = 'register'
+  }
+})
+
 function applyDemoAccount(username: string, password: string) {
   activeTab.value = 'login'
   loginForm.username = username
@@ -113,8 +123,18 @@ async function handleRegister() {
 
 <template>
   <div class="login-page">
+    <!-- Background -->
+    <div class="login-bg">
+      <div class="login-bg-img" :style="{ backgroundImage: `url(${currentBg})` }" />
+      <div class="login-bg-overlay" />
+    </div>
+
     <!-- Decorative top bar -->
     <div class="login-topbar">
+      <router-link to="/welcome" class="topbar-back">
+        <span class="back-arrow">←</span>
+        <span>返回首页</span>
+      </router-link>
       <span class="topbar-brand">AI Campus</span>
     </div>
 
@@ -260,28 +280,73 @@ async function handleRegister() {
 <style scoped>
 .login-page {
   min-height: 100vh;
-  background: #f0f2f5;
   display: flex;
   flex-direction: column;
+  position: relative;
+}
+
+/* ---- Background ---- */
+.login-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+
+.login-bg-img {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.login-bg-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.25) 0%, rgba(0, 0, 0, 0.1) 100%);
 }
 
 .login-topbar {
+  position: relative;
+  z-index: 10;
   height: 56px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 0 32px;
-  background: #fff;
-  border-bottom: 1px solid #e8e8e8;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
   flex-shrink: 0;
+}
+
+.topbar-back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.85);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.topbar-back:hover {
+  color: #ffffff;
+}
+
+.back-arrow {
+  font-size: 16px;
 }
 
 .topbar-brand {
   font-size: 16px;
   font-weight: 700;
-  color: #0969da;
+  color: #ffffff;
 }
 
 .login-wrapper {
+  position: relative;
+  z-index: 10;
   flex: 1;
   display: flex;
   align-items: center;
@@ -303,8 +368,8 @@ async function handleRegister() {
   padding: 0 10px;
   margin-bottom: 14px;
   border-radius: 999px;
-  background: rgba(9, 105, 218, 0.1);
-  color: #0969da;
+  background: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.9);
   font-size: 12px;
   font-weight: 700;
 }
@@ -312,14 +377,15 @@ async function handleRegister() {
 .branding-title {
   font-size: 28px;
   font-weight: 700;
-  color: rgba(0, 0, 0, 0.85);
+  color: #ffffff;
   margin: 0 0 16px;
   line-height: 1.3;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .branding-desc {
   font-size: 14px;
-  color: rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.8);
   line-height: 1.8;
   margin: 0 0 32px;
 }
@@ -333,28 +399,29 @@ async function handleRegister() {
 .demo-reset-note {
   margin-top: 28px;
   padding: 16px 18px;
-  border: 1px solid #d8e4f5;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
 }
 
 .demo-reset-note strong {
   display: block;
   font-size: 14px;
-  color: #1a1a2e;
+  color: #ffffff;
 }
 
 .demo-reset-note p {
   margin: 8px 0 0;
   font-size: 13px;
   line-height: 1.7;
-  color: rgba(0, 0, 0, 0.58);
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .demo-reset-note code {
   font-family: Consolas, 'Courier New', monospace;
   font-size: 12px;
-  color: #0f172a;
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .feature-item {
@@ -362,23 +429,26 @@ async function handleRegister() {
   align-items: center;
   gap: 10px;
   font-size: 14px;
-  color: rgba(0, 0, 0, 0.65);
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .feature-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #0969da;
+  background: rgba(255, 255, 255, 0.7);
   flex-shrink: 0;
 }
 
 /* ---- Right card ---- */
 .login-card {
   width: 420px;
-  border: 1px solid #e8e8e8;
-  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 12px;
   padding: 8px;
+  backdrop-filter: blur(16px);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
 }
 
 .login-card :deep(.el-card__body) {

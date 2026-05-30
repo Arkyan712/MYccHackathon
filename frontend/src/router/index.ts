@@ -5,6 +5,12 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
+      path: '/welcome',
+      name: 'Welcome',
+      component: () => import('@/views/Welcom.vue'),
+      meta: { guest: true },
+    },
+    {
       path: '/login',
       name: 'Login',
       component: () => import('@/views/LoginView.vue'),
@@ -89,7 +95,7 @@ router.beforeEach((to, _from) => {
   const auth = useAuthStore()
 
   if (to.meta.auth && !auth.isLoggedIn) {
-    return '/login'
+    return '/welcome'
   }
   if (to.meta.guest && auth.isLoggedIn) {
     return '/'
