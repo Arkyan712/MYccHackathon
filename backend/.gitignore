@@ -1,0 +1,9 @@
+app.db
+app.db-wal
+app.db-shm
+db_backups/
+skill_graph.json
+uploads/
+__pycache__/
+*.pyc
+.env

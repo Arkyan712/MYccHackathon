@@ -1,0 +1,42 @@
+# Environment
+.env
+*.env
+!.env.example
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# Backend
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.pyc
+backend/db_backups/
+backend/skill_graph.json
+backend/uploads/
+backend/tmp/
+backend/model_cache/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Config
+.claude/
+.superpowers/
+
+# Reference templates (not part of project)
+soybean-admin-main/
+vue-pure-admin-main/
+
+# OS
+.DS_Store
+Thumbs.db
