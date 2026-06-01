@@ -360,13 +360,18 @@ async def get_suggestions(
 async def draft_message(
     data: dict,
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
+    from app.services.user_context import build_user_context
+
+    user_context = await build_user_context(db, user)
     message = await agent_planner.handle_draft_message(
         need_title=data.get("need_title", ""),
         match_name=data.get("match_name", ""),
         match_skills=data.get("match_skills", []),
         match_reason=data.get("match_reason", ""),
         user_name=user.username,
+        user_context=user_context,
     )
     return {"message": message}
 
@@ -375,7 +380,11 @@ async def draft_message(
 async def draft_application_message(
     data: dict,
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
+    from app.services.user_context import build_user_context
+
+    user_context = await build_user_context(db, user)
     message = await agent_planner.handle_draft_application_message(
         need_title=data.get("need_title", ""),
         need_type=data.get("need_type", ""),
@@ -383,5 +392,6 @@ async def draft_application_message(
         user_name=user.username,
         user_skills=data.get("user_skills", []) or (user.skill_tags or []),
         match_reason=data.get("match_reason", ""),
+        user_context=user_context,
     )
     return {"message": message}

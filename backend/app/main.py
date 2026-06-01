@@ -19,6 +19,7 @@ import app.prompts.need_writing  # noqa: F401
 import app.prompts.file_analyzer  # noqa: F401
 import app.prompts.agent_intent  # noqa: F401
 import app.prompts.agent_planner  # noqa: F401
+import app.prompts.semantic_router  # noqa: F401
 
 # Import skills to trigger registration
 from app.skills.registry import SkillRegistry
@@ -30,6 +31,7 @@ from app.skills.moderate_skill import ModerateSkill
 from app.skills.file_reader import FileReaderSkill
 from app.skills.task_planner import TaskPlannerSkill
 from app.skills.context_summarizer import ContextSummarizerSkill
+from app.skills.semantic_router import SemanticRouterSkill
 
 from app.routers import auth, profile, needs, messages, agents, settings
 
@@ -46,6 +48,7 @@ def register_skills():
     SkillRegistry.register(FileReaderSkill())
     SkillRegistry.register(TaskPlannerSkill())
     SkillRegistry.register(ContextSummarizerSkill())
+    SkillRegistry.register(SemanticRouterSkill())
     logger.info("Registered %d skills", len(SkillRegistry.list_all()))
 
 

@@ -23,5 +23,6 @@ class MessageResponse(BaseModel):
 class ConversationPreview(BaseModel):
     other_user_id: int
     other_username: str
+    need_id: int
     last_message: str
     last_time: datetime

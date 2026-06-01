@@ -424,11 +424,39 @@ class PolishRequest(BaseModel):
     need_type: str
     title: str
     description: str
+    selection_mode: str = "single"
 
 
 class GenerateRequest(BaseModel):
     need_type: str
     title: str
+    selection_mode: str = "single"
+
+
+def _selection_mode_label(selection_mode: str | None) -> str:
+    return "多人/多选" if selection_mode == "multi" else "单人/单选，只选择1位合作者"
+
+
+def _align_description_with_selection_mode(text: str, selection_mode: str | None) -> str:
+    if selection_mode != "single":
+        return text
+    replacements = {
+        "2-3个": "1位",
+        "2-3 个": "1 位",
+        "两三个": "1位",
+        "几个": "1位",
+        "多位": "1位",
+        "多个": "1位",
+        "一群": "1位",
+        "队友们": "队友",
+        "同学们": "同学",
+        "组建团队": "寻找搭档",
+        "招募团队": "寻找搭档",
+    }
+    aligned = text
+    for source, target in replacements.items():
+        aligned = aligned.replace(source, target)
+    return aligned
 
 
 @router.post("/polish")
@@ -456,11 +484,12 @@ async def polish_description(
             "need_type": data.need_type,
             "title": data.title,
             "description": data.description,
+            "selection_mode_label": _selection_mode_label(data.selection_mode),
         },
     )
 
     polished = await adapter.chat(messages, temperature=0.7, max_tokens=512)
-    return {"result": polished}
+    return {"result": _align_description_with_selection_mode(polished, data.selection_mode)}
 
 
 @router.post("/generate")
@@ -487,11 +516,12 @@ async def generate_description(
             "user_context": user_context,
             "need_type": data.need_type,
             "title": data.title,
+            "selection_mode_label": _selection_mode_label(data.selection_mode),
         },
     )
 
     generated = await adapter.chat(messages, temperature=0.8, max_tokens=512)
-    return {"result": generated}
+    return {"result": _align_description_with_selection_mode(generated, data.selection_mode)}
 
 
 class BehaviorLogRequest(BaseModel):

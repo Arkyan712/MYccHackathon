@@ -4,6 +4,7 @@ from app.adapters.deepseek_adapter import DeepSeekChatAdapter
 from app.agents.base import BaseAgent
 from app.integrations.client import get_ai_client
 from app.integrations.model_router import route
+from app.skills.registry import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +38,34 @@ def is_discover_need_request(message: str) -> bool:
     )
 
 
+def _is_platform_identity_question(message: str) -> bool:
+    text = (message or "").strip().lower()
+    if not text:
+        return False
+    platform_markers = ("平台", "产品", "系统", "项目", "agent", "ai", "你")
+    identity_markers = (
+        "一句话",
+        "总结",
+        "能做什么",
+        "最大特色",
+        "特色",
+        "亮点",
+        "价值",
+        "优势",
+        "区别",
+        "介绍",
+        "定位",
+    )
+    return any(marker in text for marker in platform_markers) and any(marker in text for marker in identity_markers)
+
+
 def _heuristic_intent(message: str) -> tuple[str, float, str] | None:
     text = (message or "").strip()
     lowered = text.lower()
     if not text:
         return ("chat", 0.2, "empty_message")
+    if _is_platform_identity_question(text):
+        return ("chat", 0.96, "platform_identity_question")
 
     publish_tokens = ("\u53d1\u5e03", "\u9700\u6c42", "\u7ec4\u961f", "\u62db\u52df", "\u62db\u4eba", "\u6c42\u52a9", "\u627e\u961f\u53cb", "\u6280\u80fd\u4ea4\u6362")
     match_tokens = ("\u5339\u914d", "\u5019\u9009", "\u4eba\u9009", "\u63a8\u8350", "\u5408\u9002\u7684\u4eba")
@@ -74,6 +98,29 @@ class IntentAnalyzerAgent(BaseAgent):
         message = input_data.get("message", "")
         extracted = input_data.get("extracted_info")
         user_context = input_data.get("user_context", "")
+
+        try:
+            semantic_router = SkillRegistry.get("semantic_router")
+            result = await semantic_router.execute(
+                {
+                    "message": message,
+                    "user_context": user_context,
+                    "file_context": str(extracted or ""),
+                }
+            )
+            return {
+                "intent": result.get("intent", "chat"),
+                "confidence": result.get("confidence", 0.5),
+                "summary": result.get("summary", ""),
+                "next_action": result.get("next_action"),
+                "semantic_frame": result.get("semantic_frame"),
+                "safety_level": result.get("safety_level"),
+                "rationale": result.get("rationale"),
+            }
+        except KeyError:
+            logger.warning("semantic_router skill is not registered; falling back to built-in intent analyzer")
+        except Exception:
+            logger.exception("Semantic router failed; falling back to built-in intent analyzer")
 
         heuristic = _heuristic_intent(message)
         if heuristic is not None:

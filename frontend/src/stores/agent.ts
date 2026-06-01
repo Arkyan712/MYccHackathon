@@ -71,8 +71,10 @@ export const useAgentStore = defineStore('agent', () => {
       tasks.value = flattenTaskTree(data.tasks as AgentTask[])
       await fetchWorkspace(id)
       await fetchSuggestions(id)
+      return true
     } catch {
       clearActiveState()
+      return false
     } finally {
       loading.value = false
     }

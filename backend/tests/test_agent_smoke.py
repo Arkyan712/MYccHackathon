@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.core.database import async_session
 from app.main import app
@@ -13,6 +13,7 @@ from app.models.match import Match
 from app.models.message import Message
 from app.models.need import Need
 from app.models.need_application import NeedApplication
+from app.models.system_config import SystemConfig
 
 
 class AgentSmokeTests(unittest.TestCase):
@@ -64,6 +65,39 @@ class AgentSmokeTests(unittest.TestCase):
         response = self.client.post("/api/auth/login", json={"username": "alice", "password": "wrong"})
         self.assertEqual(response.status_code, 401)
 
+    def test_settings_api_key_check_does_not_persist_key(self):
+        _, headers = self._login()
+
+        before = self.client.get("/api/settings", headers=headers)
+        self.assertEqual(before.status_code, 200, before.text)
+
+        with patch("app.routers.settings.AIClient.chat", new=AsyncMock(return_value="ok")) as chat_mock:
+            response = self.client.post(
+                "/api/settings/test-api-key",
+                json={"deepseek_api_key": "sk-temp-check-contract"},
+                headers=headers,
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertIn("API Key 可用", body["message"])
+        self.assertIn(body["connection_path"], ("default", "local_proxy"))
+        chat_mock.assert_awaited_once()
+
+        after = self.client.get("/api/settings", headers=headers)
+        self.assertEqual(after.status_code, 200, after.text)
+        self.assertEqual(after.json(), before.json())
+
+        async def load_temp_key() -> str | None:
+            async with async_session() as db:
+                result = await db.execute(
+                    select(SystemConfig.value).where(SystemConfig.key == "deepseek_api_key")
+                )
+                return result.scalar_one_or_none()
+
+        self.assertNotEqual(asyncio.run(load_temp_key()), "sk-temp-check-contract")
+
     def test_agent_follow_up_publish_flow_works_without_remote_ai(self):
         _, headers = self._login()
         session_id = self._create_session(headers, "TEST-AUTO follow-up")
@@ -78,7 +112,7 @@ class AgentSmokeTests(unittest.TestCase):
         self.assertEqual(body["intent"], "publish_need")
         self.assertIsNone(body["drafts"])
 
-        for message in ("组队", "黑客松前端协作", "多人"):
+        for message in ("组队", "黑客松前端协作", "需要会 Vue、接口联调和项目演示的队友", "多人"):
             response = self.client.post(
                 f"/api/agent/sessions/{session_id}/chat",
                 json={"message": message},
@@ -93,6 +127,7 @@ class AgentSmokeTests(unittest.TestCase):
         self.assertEqual(draft["type"], "组队")
         self.assertEqual(draft["selection_mode"], "multi")
         self.assertIn("黑客松", draft["title"])
+        self.assertIn("Vue", draft["description"])
 
         with patch("app.services.agent_executor._run_matching_in_background", new=AsyncMock(return_value=None)), patch(
             "app.agents.match_watcher_agent.MatchWatcherAgent.execute",
@@ -119,7 +154,7 @@ class AgentSmokeTests(unittest.TestCase):
         )
         self.assertEqual(start_response.status_code, 200, start_response.text)
 
-        for message in ("组队", "蓝桥杯软件类队友", "多人"):
+        for message in ("组队", "蓝桥杯软件类队友", "需要会算法、C++ 和题解复盘的队友", "多人"):
             response = self.client.post(
                 f"/api/agent/sessions/{session_id}/chat",
                 json={"message": message},
@@ -151,6 +186,47 @@ class AgentSmokeTests(unittest.TestCase):
         self.assertEqual(mine_response.status_code, 200, mine_response.text)
         titles = [item["title"] for item in mine_response.json()]
         self.assertTrue(any("蓝桥杯" in title for title in titles), titles)
+
+    def test_agent_asks_for_skills_before_drafting_team_need(self):
+        _, headers = self._login()
+        session_id = self._create_session(headers, "TEST-AUTO team requirement follow-up")
+
+        response = self.client.post(
+            f"/api/agent/sessions/{session_id}/chat",
+            json={"message": "帮我发布一个组队需求"},
+            headers=headers,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        response = self.client.post(
+            f"/api/agent/sessions/{session_id}/chat",
+            json={"message": "报名参加acm"},
+            headers=headers,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        response = self.client.post(
+            f"/api/agent/sessions/{session_id}/chat",
+            json={"message": "多人"},
+            headers=headers,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["intent"], "publish_need")
+        self.assertIsNone(body["drafts"])
+        self.assertIn("技能", body["reply"])
+
+        response = self.client.post(
+            f"/api/agent/sessions/{session_id}/chat",
+            json={"message": "需要会 C++、算法训练和比赛报名流程的队友"},
+            headers=headers,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        final_body = response.json()
+        self.assertEqual(len(final_body["drafts"]), 1)
+        draft = final_body["drafts"][0]
+        self.assertEqual(draft["selection_mode"], "multi")
+        self.assertIn("C++", draft["description"])
 
     def test_upload_flow_uses_fallbacks_and_returns_publishable_draft(self):
         _, headers = self._login()
@@ -205,7 +281,7 @@ class AgentSmokeTests(unittest.TestCase):
             json={"message": "我要发布一个需求"},
             headers=headers,
         )
-        for message in ("组队", "蓝桥杯搭子", "多人"):
+        for message in ("组队", "蓝桥杯搭子", "需要会算法训练、C++ 和报名沟通的队友", "多人"):
             response = self.client.post(
                 f"/api/agent/sessions/{session_id}/chat",
                 json={"message": message},
@@ -357,6 +433,88 @@ class AgentSmokeTests(unittest.TestCase):
         drafted_message = draft_response.json()["message"]
         self.assertIn("黑客松路演页面", drafted_message)
         self.assertIn("Vue", drafted_message)
+
+    def test_agent_dialogue_routes_demo_questions_without_stiff_tool_list(self):
+        _, headers = self._login()
+        stiff_reply = "我现在可以帮你分析文件、整理需求草稿"
+
+        platform_cases = (
+            "帮我用一句话总结这个平台能做什么",
+            "一句话告诉我，你的最大特色",
+            "你和普通需求发布平台有什么区别",
+        )
+        with patch(
+            "app.adapters.deepseek_adapter.DeepSeekChatAdapter.chat",
+            new=AsyncMock(side_effect=RuntimeError("offline")),
+        ):
+            for message in platform_cases:
+                session_id = self._create_session(headers, f"TEST-AUTO platform intro {message[:8]}")
+                response = self.client.post(
+                    f"/api/agent/sessions/{session_id}/chat",
+                    json={"message": message},
+                    headers=headers,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                body = response.json()
+                reply = body["reply"]
+                self.assertEqual(body["intent"], "chat")
+                self.assertIn("AI", reply)
+                self.assertTrue(any(token in reply for token in ("撮合", "匹配", "连接")))
+                self.assertNotIn(stiff_reply, reply)
+
+        with patch(
+            "app.services.need_discovery_service.recommend_needs_for_user",
+            new=AsyncMock(
+                return_value=[
+                    {
+                        "id": 1,
+                        "title": "ACM 校赛训练队",
+                        "type": "组队",
+                        "description": "寻找算法方向队友",
+                        "score": 0.91,
+                        "reason": "与算法和竞赛兴趣匹配",
+                    }
+                ]
+            ),
+        ):
+            discover_session = self._create_session(headers, "TEST-AUTO discover existing team")
+            discover_response = self.client.post(
+                f"/api/agent/sessions/{discover_session}/chat",
+                json={"message": "我想报名ACM，有没有现有队伍可以加入？"},
+                headers=headers,
+            )
+            self.assertEqual(discover_response.status_code, 200, discover_response.text)
+            discover_body = discover_response.json()
+            self.assertEqual(discover_body["intent"], "discover_needs")
+            self.assertTrue(discover_body["need_recommendations"])
+            self.assertIn("开放需求", discover_body["reply"])
+
+        publish_session = self._create_session(headers, "TEST-AUTO publish routing")
+        publish_response = self.client.post(
+            f"/api/agent/sessions/{publish_session}/chat",
+            json={"message": "帮我发布一个黑客松组队需求"},
+            headers=headers,
+        )
+        self.assertEqual(publish_response.status_code, 200, publish_response.text)
+        publish_body = publish_response.json()
+        self.assertEqual(publish_body["intent"], "publish_need")
+        self.assertIsNone(publish_body["drafts"])
+        self.assertTrue(any(token in publish_body["reply"] for token in ("标题", "技能", "人数", "类型")))
+
+        upload_session = self._create_session(headers, "TEST-AUTO upload routing")
+        with patch(
+            "app.adapters.deepseek_adapter.DeepSeekChatAdapter.chat",
+            new=AsyncMock(side_effect=RuntimeError("offline")),
+        ):
+            upload_response = self.client.post(
+                f"/api/agent/sessions/{upload_session}/chat",
+                json={"message": "我待会上传一份比赛通知文档，你能先分析再帮我整理吗？"},
+                headers=headers,
+            )
+        self.assertEqual(upload_response.status_code, 200, upload_response.text)
+        upload_body = upload_response.json()
+        self.assertEqual(upload_body["intent"], "upload_file")
+        self.assertIn("上传", upload_body["reply"])
 
 
     def test_user_can_apply_to_need_and_owner_can_accept(self):
@@ -752,7 +910,8 @@ class AgentSmokeTests(unittest.TestCase):
             },
         )
         self.assertEqual(draft_response.status_code, 200, draft_response.text)
-        self.assertIn("数据可视化黑客松队友", draft_response.json()["message"])
+        self.assertIn("Vue", draft_response.json()["message"])
+        self.assertIn("Python", draft_response.json()["message"])
 
 
 if __name__ == "__main__":

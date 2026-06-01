@@ -5,20 +5,26 @@ import { ElMessage } from 'element-plus'
 import { useNeedsStore } from '@/stores/needs'
 import * as agentApi from '@/api/agent'
 import * as needsApi from '@/api/needs'
+import * as messagesApi from '@/api/messages'
+import { readDraft, writeDraft } from '@/utils/persistentDrafts'
+import { useAuthStore } from '@/stores/auth'
 
 const ConciergeChat = defineAsyncComponent(() => import('@/components/chat/ConciergeChat.vue'))
 
 const route = useRoute()
 const router = useRouter()
 const store = useNeedsStore()
+const authStore = useAuthStore()
 const needId = Number(route.params.id)
+const matchDraftKey = `match-message-drafts:${authStore.user?.id || authStore.user?.username || 'anonymous'}:${needId}`
 
 const streaming = ref(false)
 const chatVisible = ref(false)
 const selectedUserIds = ref<number[]>([])
 const selecting = ref(false)
 const draftingMsg = ref<number | null>(null)
-const draftMessages = ref<Record<number, string>>({})
+const sendingDraftMsg = ref<number | null>(null)
+const draftMessages = ref<Record<number, string>>(readDraft<Record<number, string>>(matchDraftKey, {}))
 
 let eventSource: EventSource | null = null
 
@@ -111,6 +117,10 @@ watch(
   },
 )
 
+watch(draftMessages, (drafts) => {
+  writeDraft(matchDraftKey, drafts)
+}, { deep: true })
+
 function startStream() {
   streaming.value = true
   store.matchProgress = []
@@ -173,6 +183,31 @@ async function handleDraftMessage(match: { user_id: number; username: string; sk
     ElMessage.error('生成失败，请重试')
   } finally {
     draftingMsg.value = null
+  }
+}
+
+async function handleSendDraft(match: { user_id: number; username: string }) {
+  const draft = (draftMessages.value[match.user_id] || '').trim()
+  if (!draft) {
+    ElMessage.warning('请先生成私信草稿')
+    return
+  }
+  sendingDraftMsg.value = match.user_id
+  try {
+    await messagesApi.sendMessage({
+      need_id: needId,
+      receiver_id: match.user_id,
+      content: draft,
+    })
+    const nextDrafts = { ...draftMessages.value }
+    delete nextDrafts[match.user_id]
+    draftMessages.value = nextDrafts
+    ElMessage.success(`已发送给 ${match.username}`)
+    router.push(`/messages/${match.user_id}?needId=${needId}`)
+  } catch (error: any) {
+    ElMessage.error('发送失败: ' + (error?.response?.data?.detail || error?.message || '未知错误'))
+  } finally {
+    sendingDraftMsg.value = null
   }
 }
 
@@ -463,6 +498,16 @@ function matchRowClassName({ rowIndex }: { rowIndex: number }) {
                 <strong>AI 起草私信</strong>
               </div>
               <p>{{ draftMessages[match.user_id] }}</p>
+              <div class="draft-actions">
+                <el-button
+                  type="primary"
+                  size="small"
+                  :loading="sendingDraftMsg === match.user_id"
+                  @click="handleSendDraft(match)"
+                >
+                  发送草稿
+                </el-button>
+              </div>
             </div>
 
             <div class="candidate-actions">
@@ -482,6 +527,15 @@ function matchRowClassName({ rowIndex }: { rowIndex: number }) {
               <el-button text type="primary" :loading="draftingMsg === match.user_id" @click="handleDraftMessage(match)">
                 <el-icon :size="14"><EditPen /></el-icon>
                 {{ draftMessages[match.user_id] ? '重新起草' : '起草私信' }}
+              </el-button>
+              <el-button
+                v-if="draftMessages[match.user_id]"
+                text
+                type="success"
+                :loading="sendingDraftMsg === match.user_id"
+                @click="handleSendDraft(match)"
+              >
+                发送草稿
               </el-button>
             </div>
           </article>
@@ -881,6 +935,12 @@ function matchRowClassName({ rowIndex }: { rowIndex: number }) {
   margin-top: 8px;
   color: var(--text-primary);
   line-height: 1.6;
+}
+
+.draft-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
 }
 
 .candidate-actions {

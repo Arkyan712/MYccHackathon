@@ -53,11 +53,11 @@ export function refineNeed(needId: number) {
   return api.post<{ question: string }>(`/needs/${needId}/refine`)
 }
 
-export function polishDescription(data: { need_type: string; title: string; description: string }) {
+export function polishDescription(data: { need_type: string; title: string; description: string; selection_mode?: string }) {
   return api.post<{ result: string }>('/needs/polish', data)
 }
 
-export function generateDescription(data: { need_type: string; title: string }) {
+export function generateDescription(data: { need_type: string; title: string; selection_mode?: string }) {
   return api.post<{ result: string }>('/needs/generate', data)
 }
 

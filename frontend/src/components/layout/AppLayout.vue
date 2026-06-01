@@ -113,6 +113,11 @@ async function handleAvatarUpload(event: Event) {
 }
 
 async function fetchNotifications() {
+  if (!auth.token) {
+    notifyCount.value = 0
+    notifyItems.value = []
+    return
+  }
   try {
     const { data } = await api.get('/messages/notifications')
     notifyCount.value = data.count

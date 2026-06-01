@@ -26,6 +26,9 @@ def build_draft_from_follow_up_state(collected: dict[str, Any]) -> dict[str, str
     draft_type = str(collected.get("type") or "组队")
     title = str(collected.get("title") or "新需求").strip() or "新需求"
     description = str(collected.get("description") or "").strip() or "请补充需求描述"
+    requirements = str(collected.get("requirements") or "").strip()
+    if requirements and requirements not in description:
+        description = f"{description}\n\n期望技能/方向：{requirements}"
     selection_mode = str(collected.get("selection_mode") or "single")
     if selection_mode not in {"single", "multi"}:
         selection_mode = "single"

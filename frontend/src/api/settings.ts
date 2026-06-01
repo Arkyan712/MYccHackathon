@@ -7,3 +7,7 @@ export function getSettings() {
 export function updateSettings(data: { deepseek_api_key: string }) {
   return api.put<{ ok: boolean; message: string }>('/settings', data)
 }
+
+export function testApiKey(data: { deepseek_api_key: string }) {
+  return api.post<{ ok: boolean; message: string; connection_path?: 'default' | 'local_proxy' }>('/settings/test-api-key', data)
+}

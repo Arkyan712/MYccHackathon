@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useNeedsStore } from '@/stores/needs'
 import { useAgentStore } from '@/stores/agent'
 import type { NeedApplication } from '@/types'
+import { readDraft, removeDraft, writeDraft } from '@/utils/persistentDrafts'
 
 const route = useRoute()
 const router = useRouter()
@@ -26,6 +27,9 @@ const myApplication = computed(() =>
   needsStore.myApplications.find((item) => item.need_id === needId.value) || null,
 )
 const selectedUsers = computed(() => new Set(need.value?.selected_user_ids || []))
+const applicationDraftKey = computed(
+  () => `need-application-draft:${authStore.user?.id || authStore.user?.username || 'anonymous'}:${needId.value}`,
+)
 
 onMounted(() => {
   void load()
@@ -41,6 +45,9 @@ async function load() {
   const cachedDraft = needsStore.consumeApplicationDraft(needId.value)
   if (cachedDraft) {
     applicationMessage.value = cachedDraft
+    writeDraft(applicationDraftKey.value, cachedDraft)
+  } else {
+    applicationMessage.value = readDraft<string>(applicationDraftKey.value, applicationMessage.value)
   }
   if (isOwner.value) {
     await needsStore.fetchNeedApplications(needId.value)
@@ -56,8 +63,9 @@ async function handleApply() {
   if (!need.value) return
   applying.value = true
   try {
-    const application = await needsStore.applyToNeed(need.value.id, applicationMessage.value)
-    applicationMessage.value = application.message
+    await needsStore.applyToNeed(need.value.id, applicationMessage.value)
+    removeDraft(applicationDraftKey.value)
+    applicationMessage.value = ''
     ElMessage.success('申请已发送，发布者会在消息页继续沟通。')
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.detail || error?.message || '申请失败')
@@ -65,6 +73,15 @@ async function handleApply() {
     applying.value = false
   }
 }
+
+watch(applicationMessage, (value) => {
+  if (!needId.value || isOwner.value) return
+  if (value.trim()) {
+    writeDraft(applicationDraftKey.value, value)
+  } else {
+    removeDraft(applicationDraftKey.value)
+  }
+})
 
 async function handleDraftWithAgent() {
   if (!need.value || !authStore.user) return

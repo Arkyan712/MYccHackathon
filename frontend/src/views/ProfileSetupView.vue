@@ -272,11 +272,19 @@ function cancel() {
 
 <style scoped>
 .profile-page { padding: 0; }
-.page-header { margin-bottom: 24px; }
+.page-header {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto 24px;
+}
 .page-header h2 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
 .page-header p { font-size: 14px; color: rgba(0,0,0,0.45); }
 
-.profile-content { max-width: 720px; }
+.profile-content {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
 .section-card {
   border: 1px solid #e8e8e8; border-radius: 8px; margin-bottom: 16px;
 }

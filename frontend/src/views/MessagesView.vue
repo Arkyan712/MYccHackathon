@@ -4,7 +4,6 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { ConversationPreview, MessageItem } from '@/types'
 import * as messagesApi from '@/api/messages'
-import api from '@/api/client'
 import ConversationList from '@/components/message/ConversationList.vue'
 import ChatWindow from '@/components/message/ChatWindow.vue'
 
@@ -15,15 +14,17 @@ const conversations = ref<ConversationPreview[]>([])
 const messages = ref<MessageItem[]>([])
 const activeUserId = ref<number | null>(null)
 const activeNeedId = ref<number>(0)
-// Remember need_id per conversation (userId -> needId)
-const needIdMap = ref<Record<number, number>>({})
 const loading = ref(false)
 
 const isMobile = ref(window.innerWidth < 768)
 const showList = ref(true)
 
 const activeUserName = computed(() =>
-  conversations.value.find((c) => c.other_user_id === activeUserId.value)?.other_username || ''
+  conversations.value.find(
+    (c) => c.other_user_id === activeUserId.value && c.need_id === activeNeedId.value,
+  )?.other_username ||
+  conversations.value.find((c) => c.other_user_id === activeUserId.value)?.other_username ||
+  ''
 )
 
 const hasActiveConversation = computed(() => activeUserId.value !== null)
@@ -65,36 +66,19 @@ async function selectConversation(userId: number, initialNeedId: number = 0) {
   activeUserId.value = userId
   loading.value = true
 
-  // Restore remembered need_id or use initial
-  const remembered = needIdMap.value[userId]
-  activeNeedId.value = initialNeedId || remembered || 0
+  const listedNeedId = conversations.value.find((c) => c.other_user_id === userId)?.need_id || 0
+  activeNeedId.value = initialNeedId || listedNeedId || 0
 
   try {
     const { data } = await messagesApi.getMessages(userId, activeNeedId.value || undefined)
     messages.value = data
-    if (data.length > 0 && data[0].need_id) {
+    if (!activeNeedId.value && data.length > 0 && data[0].need_id) {
       activeNeedId.value = data[0].need_id
-      needIdMap.value[userId] = data[0].need_id
     }
   } catch {
     messages.value = []
   } finally {
     loading.value = false
-  }
-
-  // If user not in conversation list yet, fetch name and add entry
-  if (!conversations.value.find(c => c.other_user_id === userId)) {
-    let username = '用户 ' + userId
-    try {
-      const { data } = await api.get(`/profile/user/${userId}`)
-      if (data.username) username = data.username
-    } catch { /* use fallback */ }
-    conversations.value.unshift({
-      other_user_id: userId,
-      other_username: username,
-      last_message: '',
-      last_time: new Date().toISOString(),
-    })
   }
 
   // Mark messages as read
@@ -118,10 +102,6 @@ async function handleSend(content: string) {
       content,
     })
     messages.value.push(data)
-    // Remember need_id and refresh conversation list
-    if (data.need_id) {
-      needIdMap.value[activeUserId.value] = data.need_id
-    }
     loadConversations()
   } catch (e: any) {
     ElMessage.error('发送失败: ' + (e?.response?.data?.detail || e?.message || '未知错误'))
@@ -145,6 +125,7 @@ async function handleSend(content: string) {
           <ConversationList
             :conversations="conversations"
             :active-id="activeUserId"
+            :active-need-id="activeNeedId"
             @select="selectConversation"
           />
         </div>

@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useNeedsStore } from '@/stores/needs'
+import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
 import { MagicStick, EditPen, Refresh } from '@element-plus/icons-vue'
 import * as needsApi from '@/api/needs'
+import { readDraft, removeDraft, writeDraft } from '@/utils/persistentDrafts'
 
 const router = useRouter()
 const store = useNeedsStore()
+const authStore = useAuthStore()
 const loading = ref(false)
 const generating = ref(false)
 const polishing = ref(false)
@@ -15,6 +18,23 @@ const showPreview = ref(false)
 const previewText = ref('')
 const previewMode = ref<'polish' | 'generate'>('polish')
 const form = reactive({ type: '组队', title: '', description: '', selection_mode: 'single' as 'single' | 'multi' })
+const draftKey = `need-create-draft:${authStore.user?.id || authStore.user?.username || 'anonymous'}`
+
+const savedDraft = readDraft<{
+  form?: Partial<typeof form>
+  previewText?: string
+  previewMode?: 'polish' | 'generate'
+  showPreview?: boolean
+}>(draftKey, {})
+if (savedDraft.form) {
+  form.type = savedDraft.form.type || form.type
+  form.title = savedDraft.form.title || form.title
+  form.description = savedDraft.form.description || form.description
+  form.selection_mode = savedDraft.form.selection_mode || form.selection_mode
+}
+previewText.value = savedDraft.previewText || ''
+previewMode.value = savedDraft.previewMode || previewMode.value
+showPreview.value = Boolean(savedDraft.showPreview && previewText.value)
 
 const hasTitle = computed(() => form.title.trim().length > 0)
 const hasDescription = computed(() => form.description.trim().length > 0)
@@ -55,6 +75,24 @@ function applyTemplate(template: typeof needTemplates[number]) {
   ElMessage.success('已套用需求模板')
 }
 
+watch(
+  () => ({
+    form: { ...form },
+    previewText: previewText.value,
+    previewMode: previewMode.value,
+    showPreview: showPreview.value,
+  }),
+  (draft) => {
+    const hasContent = draft.form.title || draft.form.description || draft.previewText
+    if (hasContent) {
+      writeDraft(draftKey, draft)
+    } else {
+      removeDraft(draftKey)
+    }
+  },
+  { deep: true },
+)
+
 async function handleGenerate() {
   if (!hasTitle.value) {
     ElMessage.warning('请先填写标题')
@@ -65,6 +103,7 @@ async function handleGenerate() {
     const { data } = await needsApi.generateDescription({
       need_type: form.type,
       title: form.title,
+      selection_mode: form.selection_mode,
     })
     previewText.value = data.result
     previewMode.value = 'generate'
@@ -87,6 +126,7 @@ async function handlePolish() {
       need_type: form.type,
       title: form.title,
       description: form.description,
+      selection_mode: form.selection_mode,
     })
     previewText.value = data.result
     previewMode.value = 'polish'
@@ -139,6 +179,7 @@ async function submit() {
       description: form.description.trim(),
       selection_mode: form.selection_mode,
     })
+    removeDraft(draftKey)
     ElMessage.success('发布成功，正在跳转到匹配进度...')
     router.push(`/needs/${need.id}/matches`)
   } catch {

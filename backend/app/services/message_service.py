@@ -66,6 +66,7 @@ async def get_conversations(
     sub = (
         select(
             Message.id,
+            Message.need_id,
             Message.sender_id,
             Message.receiver_id,
             other_user_id,
@@ -73,7 +74,7 @@ async def get_conversations(
             Message.created_at,
             func.row_number()
             .over(
-                partition_by=conversation_partner_expr(user_id),
+                partition_by=(conversation_partner_expr(user_id), Message.need_id),
                 order_by=Message.created_at.desc(),
             )
             .label("rn"),
@@ -101,6 +102,7 @@ async def get_conversations(
             ConversationPreview(
                 other_user_id=other_id,
                 other_username=other_user.username if other_user else "未知",
+                need_id=row.need_id,
                 last_message=row.content[:50],
                 last_time=row.created_at,
             )

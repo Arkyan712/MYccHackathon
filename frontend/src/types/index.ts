@@ -173,6 +173,7 @@ export interface MessageItem {
 export interface ConversationPreview {
   other_user_id: number
   other_username: string
+  need_id: number
   last_message: string
   last_time: string
 }

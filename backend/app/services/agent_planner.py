@@ -29,7 +29,7 @@ _AGENT_TO_TASK_TYPE: dict[str, str] = {
     "RerankAgent": "rerank_matches",
 }
 
-FOLLOW_UP_FIELDS = ("type", "title", "description", "selection_mode")
+FOLLOW_UP_FIELDS = ("type", "title", "description", "requirements", "selection_mode")
 PUBLISH_CONFIRM_TOKENS = (
     "\u53d1\u5e03",
     "\u786e\u8ba4\u53d1\u5e03",
@@ -89,6 +89,12 @@ def collect_need_follow_up(message: str, state: dict | None) -> dict:
         collected["title"] = text
     elif pending_field == "description":
         collected["description"] = text
+    elif pending_field == "requirements":
+        selection_mode = _normalize_selection_mode(text)
+        if selection_mode:
+            collected["selection_mode"] = selection_mode
+        else:
+            collected["requirements"] = text
     elif pending_field == "selection_mode":
         collected["selection_mode"] = _normalize_selection_mode(text) or "single"
     else:
@@ -117,6 +123,8 @@ def get_follow_up_question(state: dict) -> str:
         return "给这个需求起一个简短标题。"
     if field == "description":
         return "补充一下需求描述，说明要做什么、希望对方怎样参与。"
+    if field == "requirements":
+        return "你希望队友具备哪些技能或负责哪些方向？例如算法、前端、建模、文档、路演。"
     if field == "selection_mode":
         return "你希望只选 1 人还是允许多人参与？回复“单人”或“多人”。"
     return "我已经拿到关键信息，可以生成需求草稿了。"
@@ -137,6 +145,36 @@ def _build_follow_up_metadata(state: dict) -> dict:
 def _is_publish_confirmation(message: str) -> bool:
     text = (message or "").strip()
     return bool(text) and any(token in text for token in PUBLISH_CONFIRM_TOKENS)
+
+
+def _is_platform_identity_question(message: str) -> bool:
+    text = (message or "").strip().lower()
+    if not text:
+        return False
+    platform_markers = ("平台", "产品", "系统", "项目", "agent", "ai", "你")
+    identity_markers = (
+        "一句话",
+        "总结",
+        "能做什么",
+        "最大特色",
+        "特色",
+        "亮点",
+        "价值",
+        "优势",
+        "区别",
+        "介绍",
+        "定位",
+    )
+    return any(marker in text for marker in platform_markers) and any(marker in text for marker in identity_markers)
+
+
+def _platform_identity_reply(message: str) -> str:
+    text = (message or "").strip()
+    if "区别" in text or "优势" in text:
+        return "我不是普通的需求发布栏，而是用 AI 理解意图、补全需求、语义匹配队友，并把申请和沟通串成闭环的校园协作撮合平台。"
+    if "最大特色" in text or "特色" in text or "亮点" in text:
+        return "我的最大特色是把 AI 从“写文案”推进到“撮合协作”：帮你澄清需求、匹配合适的人，也能反向发现适合你加入的机会。"
+    return "这是一个用 AI 把校园里的需求、技能和同学连接起来的平台，能帮你发布协作需求、智能匹配队友，并推动双方进入申请和沟通。"
 
 
 def _get_pending_drafts(planning_state: dict | None) -> list[dict]:
@@ -170,6 +208,8 @@ def _split_selected_and_remaining_drafts(pending_drafts: list[dict], selected_dr
 
 def _fallback_chat_reply(message: str, file_info: str) -> str:
     text = (message or "").strip()
+    if _is_platform_identity_question(text):
+        return _platform_identity_reply(text)
     if any(token in text for token in ("\u60f3\u627e\u9700\u6c42", "\u60f3\u52a0\u5165", "\u6709\u6ca1\u6709\u9879\u76ee", "\u60f3\u53c2\u4e0e")):
         return "可以。我会结合你的技能背景去找现有开放需求，并推荐更适合进一步沟通的项目。"
     if any(token in text for token in ("\u4e0a\u4f20", "\u9644\u4ef6", "\u6587\u6863", "pdf", "docx", "txt")):
@@ -654,6 +694,7 @@ async def handle_draft_message(
     match_skills: list[str],
     match_reason: str,
     user_name: str,
+    user_context: str = "",
 ) -> str:
     from app.adapters.deepseek_adapter import DeepSeekChatAdapter
     from app.integrations.client import get_ai_client
@@ -664,15 +705,16 @@ async def handle_draft_message(
     cfg = route("agent_chat")
     adapter = DeepSeekChatAdapter(client, model=cfg["model"])
     messages = PromptRegistry.render(
-        "agent_draft_message",
-        {
-            "need_title": need_title,
-            "match_name": match_name,
-            "match_skills": ", ".join(match_skills),
-            "match_reason": match_reason,
-            "user_name": user_name,
-        },
-    )
+            "agent_draft_message",
+            {
+                "need_title": need_title,
+                "match_name": match_name,
+                "match_skills": ", ".join(match_skills),
+                "match_reason": match_reason,
+                "user_name": user_name,
+                "user_context": user_context,
+            },
+        )
     try:
         return await adapter.chat(messages, temperature=0.8, max_tokens=200)
     except Exception:
@@ -693,6 +735,7 @@ async def handle_draft_application_message(
     user_name: str,
     user_skills: list[str],
     match_reason: str,
+    user_context: str = "",
 ) -> str:
     from app.adapters.deepseek_adapter import DeepSeekChatAdapter
     from app.integrations.client import get_ai_client
@@ -717,6 +760,7 @@ async def handle_draft_application_message(
                 f"Owner name: {owner_name}\n"
                 f"Applicant name: {user_name}\n"
                 f"Applicant skills: {', '.join(user_skills)}\n"
+                f"Applicant context: {user_context[:500]}\n"
                 f"Why it matches: {match_reason}\n"
             ),
         },

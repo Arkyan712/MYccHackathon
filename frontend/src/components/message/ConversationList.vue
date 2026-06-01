@@ -4,10 +4,11 @@ import type { ConversationPreview } from '@/types'
 defineProps<{
   conversations: ConversationPreview[]
   activeId: number | null
+  activeNeedId: number
 }>()
 
 const emit = defineEmits<{
-  (e: 'select', id: number): void
+  (e: 'select', id: number, needId: number): void
 }>()
 
 function formatPreviewTime(ts: string): string {
@@ -35,10 +36,10 @@ function formatPreviewTime(ts: string): string {
     <div v-if="conversations.length > 0" class="conv-scroll">
       <div
         v-for="c in conversations"
-        :key="c.other_user_id"
+        :key="`${c.other_user_id}-${c.need_id}`"
         class="conv-item"
-        :class="{ active: c.other_user_id === activeId }"
-        @click="emit('select', c.other_user_id)"
+        :class="{ active: c.other_user_id === activeId && c.need_id === activeNeedId }"
+        @click="emit('select', c.other_user_id, c.need_id)"
       >
         <div class="conv-row">
           <span class="conv-name">{{ c.other_username }}</span>

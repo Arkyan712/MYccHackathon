@@ -49,25 +49,19 @@ function checkMobile() {
 onMounted(async () => {
   checkMobile()
   window.addEventListener('resize', checkMobile)
-  await store.fetchSessions()
-  const sessionId = route.params.sessionId
-  if (sessionId) {
-    activeSessionId.value = Number(sessionId)
-    await store.loadSession(Number(sessionId))
-  } else if (store.sessions.length > 0) {
-    router.replace(`/agent/${store.sessions[0].id}`)
-  }
+  await initializeAgentRoute()
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', checkMobile)
 })
 
-watch(() => route.params.sessionId, async (sessionId) => {
-  if (sessionId) {
-    activeSessionId.value = Number(sessionId)
-    await store.loadSession(Number(sessionId))
-  }
+watch(() => route.params.sessionId, () => initializeAgentRoute())
+
+watch(() => authStore.user?.id, () => {
+  store.clearActiveState()
+  activeSessionId.value = null
+  if (route.path.startsWith('/agent')) void initializeAgentRoute()
 })
 
 watch(
@@ -80,6 +74,7 @@ async function handleNewSession() {
   const id = await store.createSession()
   activeSessionId.value = id
   router.push(`/agent/${id}`)
+  return id
 }
 
 function handleSelectSession(id: number) {
@@ -111,27 +106,77 @@ async function handleDeleteSession(id: number) {
   }
 }
 
+async function openDefaultSession() {
+  if (store.sessions.length > 0) {
+    const fallbackId = store.sessions[0].id
+    activeSessionId.value = fallbackId
+    if (route.params.sessionId !== String(fallbackId)) {
+      await router.replace(`/agent/${fallbackId}`)
+      return
+    }
+    await store.loadSession(fallbackId)
+    return
+  }
+
+  activeSessionId.value = null
+  store.clearActiveState()
+  if (route.path !== '/agent') await router.replace('/agent')
+}
+
+async function initializeAgentRoute() {
+  await store.fetchSessions()
+  const rawSessionId = Array.isArray(route.params.sessionId) ? route.params.sessionId[0] : route.params.sessionId
+  const requestedSessionId = Number(rawSessionId)
+
+  if (rawSessionId && Number.isFinite(requestedSessionId)) {
+    const belongsToCurrentUser = store.sessions.some((session) => session.id === requestedSessionId)
+    if (!belongsToCurrentUser) {
+      await openDefaultSession()
+      return
+    }
+
+    activeSessionId.value = requestedSessionId
+    const loaded = await store.loadSession(requestedSessionId)
+    if (!loaded) {
+      await store.fetchSessions()
+      await openDefaultSession()
+    }
+    return
+  }
+
+  await openDefaultSession()
+}
+
+async function ensureActiveSession() {
+  if (activeSessionId.value) return activeSessionId.value
+  if (store.sessions.length > 0) {
+    const id = store.sessions[0].id
+    activeSessionId.value = id
+    await router.replace(`/agent/${id}`)
+    return id
+  }
+  return await handleNewSession()
+}
+
 async function handleSend() {
   const text = inputText.value.trim()
-  if (!text || !activeSessionId.value || store.isStreaming) return
+  if (!text || store.isStreaming) return
+  const sessionId = await ensureActiveSession()
   inputText.value = ''
 
   if (text.startsWith('/plan ')) {
-    await store.triggerPlan(activeSessionId.value, text.slice(6))
+    await store.triggerPlan(sessionId, text.slice(6))
   } else {
-    await store.sendMessage(activeSessionId.value, text)
+    await store.sendMessage(sessionId, text)
   }
   scrollToBottom()
 }
 
 async function handleFileUpload(file: File) {
-  if (!activeSessionId.value) {
-    ElMessage.warning('请先创建一个会话')
-    return
-  }
+  const sessionId = await ensureActiveSession()
   uploading.value = true
   try {
-    const result = await store.uploadFile(activeSessionId.value, file)
+    const result = await store.uploadFile(sessionId, file)
     if (result) ElMessage.success(`${file.name} 分析完成`)
   } catch (error: any) {
     ElMessage.error('分析失败: ' + (error?.response?.data?.detail || error?.message || '未知错误'))

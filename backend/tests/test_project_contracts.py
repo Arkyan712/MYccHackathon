@@ -96,11 +96,54 @@ class ProjectContractTests(unittest.TestCase):
         self.assertIn("无需重启", source)
         self.assertNotIn("重启服务后生效", source)
 
+    def test_settings_api_key_check_is_available_before_save(self):
+        router_source = (BACKEND / "app" / "routers" / "settings.py").read_text(encoding="utf-8")
+        client_source = (BACKEND / "app" / "integrations" / "client.py").read_text(encoding="utf-8")
+        api_source = (FRONTEND / "src" / "api" / "settings.ts").read_text(encoding="utf-8")
+        view_source = (FRONTEND / "src" / "views" / "SettingsView.vue").read_text(encoding="utf-8")
+
+        self.assertIn('@router.post("/test-api-key")', router_source)
+        self.assertIn("AIClient(api_key=key", router_source)
+        self.assertIn("max_retries=0", router_source)
+        self.assertIn("def explain_api_check_error", router_source)
+        self.assertIn("api_key: str | None = None", client_source)
+        self.assertIn("testApiKey", api_source)
+        self.assertIn("/settings/test-api-key", api_source)
+        self.assertIn("testApiKeyBeforeSave", view_source)
+        self.assertIn("ElMessageBox.alert", view_source)
+        self.assertIn("connection_path", api_source)
+        self.assertIn("formatConnectionPath", view_source)
+
+    def test_ai_client_can_fallback_to_local_proxy(self):
+        client_source = (BACKEND / "app" / "integrations" / "client.py").read_text(encoding="utf-8")
+
+        self.assertIn("LOCAL_PROXY_URL", client_source)
+        self.assertIn('"local_proxy", LOCAL_PROXY_URL', client_source)
+        self.assertIn("last_connection_path", client_source)
+        self.assertIn("_is_network_error", client_source)
+        self.assertIn('kwargs["proxy"] = proxy_url', client_source)
+
     def test_message_conversation_query_partitions_by_actual_other_user(self):
         source = (BACKEND / "app" / "services" / "message_service.py").read_text(encoding="utf-8")
 
         self.assertIn("conversation_partner_expr", source)
         self.assertNotIn("partition_by=func.max", source)
+
+    def test_message_conversation_list_preserves_need_context(self):
+        service_source = (BACKEND / "app" / "services" / "message_service.py").read_text(encoding="utf-8")
+        schema_source = (BACKEND / "app" / "schemas" / "message.py").read_text(encoding="utf-8")
+        type_source = (FRONTEND / "src" / "types" / "index.ts").read_text(encoding="utf-8")
+        list_source = (FRONTEND / "src" / "components" / "message" / "ConversationList.vue").read_text(encoding="utf-8")
+        view_source = (FRONTEND / "src" / "views" / "MessagesView.vue").read_text(encoding="utf-8")
+
+        self.assertIn("need_id: int", schema_source)
+        self.assertIn("Message.need_id", service_source)
+        self.assertIn("partition_by=(conversation_partner_expr(user_id), Message.need_id)", service_source)
+        self.assertIn("need_id: number", type_source)
+        self.assertIn("`${c.other_user_id}-${c.need_id}`", list_source)
+        self.assertIn("emit('select', c.other_user_id, c.need_id)", list_source)
+        self.assertIn(":active-need-id=\"activeNeedId\"", view_source)
+        self.assertNotIn("conversations.value.unshift", view_source)
 
     def test_frontend_exposes_promised_demo_features(self):
         need_create = (FRONTEND / "src" / "views" / "NeedCreateView.vue").read_text(encoding="utf-8")
@@ -112,6 +155,63 @@ class ProjectContractTests(unittest.TestCase):
         self.assertIn("comparison-table", match_result)
         self.assertIn("suggestions", agent_store)
         self.assertIn("主动建议", agent_view)
+
+    def test_ai_description_generation_respects_selection_mode(self):
+        need_api = (FRONTEND / "src" / "api" / "needs.ts").read_text(encoding="utf-8")
+        need_create = (FRONTEND / "src" / "views" / "NeedCreateView.vue").read_text(encoding="utf-8")
+        prompt_source = (BACKEND / "app" / "prompts" / "need_writing.py").read_text(encoding="utf-8")
+        router_source = (BACKEND / "app" / "routers" / "needs.py").read_text(encoding="utf-8")
+
+        self.assertIn("selection_mode", need_api)
+        self.assertIn("selection_mode: form.selection_mode", need_create)
+        self.assertIn("人数模式", prompt_source)
+        self.assertIn("_align_description_with_selection_mode", router_source)
+
+    def test_ai_assisted_drafts_survive_page_navigation(self):
+        need_create = (FRONTEND / "src" / "views" / "NeedCreateView.vue").read_text(encoding="utf-8")
+        need_detail = (FRONTEND / "src" / "views" / "NeedDetailView.vue").read_text(encoding="utf-8")
+        match_result = (FRONTEND / "src" / "views" / "MatchResultView.vue").read_text(encoding="utf-8")
+        helper_source = (FRONTEND / "src" / "utils" / "persistentDrafts.ts").read_text(encoding="utf-8")
+
+        self.assertIn("localStorage", helper_source)
+        self.assertIn("need-create-draft", need_create)
+        self.assertIn("writeDraft(draftKey", need_create)
+        self.assertIn("removeDraft(draftKey", need_create)
+        self.assertIn("need-application-draft", need_detail)
+        self.assertIn("writeDraft(applicationDraftKey.value", need_detail)
+        self.assertIn("match-message-drafts", match_result)
+        self.assertIn("readDraft<Record<number, string>>", match_result)
+
+    def test_ai_writing_uses_current_user_context(self):
+        needs_router = (BACKEND / "app" / "routers" / "needs.py").read_text(encoding="utf-8")
+        agent_router = (BACKEND / "app" / "routers" / "agents.py").read_text(encoding="utf-8")
+        user_context = (BACKEND / "app" / "services" / "user_context.py").read_text(encoding="utf-8")
+        need_detail = (FRONTEND / "src" / "views" / "NeedDetailView.vue").read_text(encoding="utf-8")
+
+        self.assertIn("build_user_context(db, user)", needs_router)
+        self.assertIn("build_user_context(db, user)", agent_router)
+        self.assertIn("user_context=user_context", agent_router)
+        self.assertIn("技能标签", user_context)
+        self.assertIn("历史需求风格", user_context)
+        self.assertIn("Applicant context", (BACKEND / "app" / "services" / "agent_planner.py").read_text(encoding="utf-8"))
+        self.assertIn("authStore.user.skill_tags", need_detail)
+
+    def test_agent_view_never_drops_first_message_when_no_session_is_active(self):
+        agent_view = (FRONTEND / "src" / "views" / "AgentView.vue").read_text(encoding="utf-8")
+
+        self.assertIn("async function ensureActiveSession", agent_view)
+        self.assertIn("const sessionId = await ensureActiveSession()", agent_view)
+        self.assertNotIn("if (!text || !activeSessionId.value || store.isStreaming) return", agent_view)
+
+    def test_agent_view_recovers_from_stale_session_route_after_account_switch(self):
+        agent_view = (FRONTEND / "src" / "views" / "AgentView.vue").read_text(encoding="utf-8")
+        agent_store = (FRONTEND / "src" / "stores" / "agent.ts").read_text(encoding="utf-8")
+
+        self.assertIn("async function initializeAgentRoute", agent_view)
+        self.assertIn("store.sessions.some((session) => session.id === requestedSessionId)", agent_view)
+        self.assertIn("await openDefaultSession()", agent_view)
+        self.assertIn("return true", agent_store)
+        self.assertIn("return false", agent_store)
 
 
     def test_frontend_surfaces_demo_ready_entry_points(self):
@@ -161,6 +261,23 @@ class ProjectContractTests(unittest.TestCase):
         self.assertIn("discover_needs", planner_source)
         self.assertIn("recommend_needs_for_user", service_source)
 
+    def test_semantic_router_skill_is_registered_for_agent_reasoning(self):
+        main_source = (BACKEND / "app" / "main.py").read_text(encoding="utf-8")
+        intent_source = (BACKEND / "app" / "agents" / "intent_analyzer_agent.py").read_text(encoding="utf-8")
+        prompt_source = (BACKEND / "app" / "prompts" / "semantic_router.py").read_text(encoding="utf-8")
+
+        self.assertIn("SemanticRouterSkill", main_source)
+        self.assertIn('SkillRegistry.get("semantic_router")', intent_source)
+        self.assertIn('name="semantic_router"', prompt_source)
+        self.assertIn("next_action", prompt_source)
+
+    def test_agent_chat_prompt_handles_platform_identity_questions(self):
+        prompt_source = (BACKEND / "app" / "prompts" / "agent_intent.py").read_text(encoding="utf-8")
+
+        self.assertIn("平台定位类问题", prompt_source)
+        self.assertIn("双边协作撮合", prompt_source)
+        self.assertIn("不要只罗列工具能力", prompt_source)
+
     def test_frontend_exposes_my_applications_entry(self):
         router_source = (FRONTEND / "src" / "router" / "index.ts").read_text(encoding="utf-8")
         layout_source = (FRONTEND / "src" / "components" / "layout" / "AppLayout.vue").read_text(encoding="utf-8")
@@ -199,6 +316,15 @@ class ProjectContractTests(unittest.TestCase):
 
         self.assertIn("draftMessages.value[match.user_id]", match_result)
         self.assertNotIn("match.username as unknown as number", match_result)
+
+    def test_match_result_can_send_ai_drafted_private_message(self):
+        match_result = (FRONTEND / "src" / "views" / "MatchResultView.vue").read_text(encoding="utf-8")
+
+        self.assertIn("* as messagesApi", match_result)
+        self.assertIn("async function handleSendDraft", match_result)
+        self.assertIn("messagesApi.sendMessage", match_result)
+        self.assertIn("content: draft", match_result)
+        self.assertIn("发送草稿", match_result)
 
     def test_messages_view_cleans_up_resize_listener(self):
         messages_view = (FRONTEND / "src" / "views" / "MessagesView.vue").read_text(encoding="utf-8")
@@ -278,6 +404,8 @@ class AgentBehaviorTests(unittest.IsolatedAsyncioTestCase):
         from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
         from app.core.database import Base
         import app.models.agent  # noqa: F401
+        import app.models.knowledge  # noqa: F401
+        import app.models.message  # noqa: F401
         import app.models.user  # noqa: F401
 
         self.engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -287,6 +415,91 @@ class AgentBehaviorTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         await self.engine.dispose()
+
+    async def test_ai_client_falls_back_to_local_proxy_on_network_error(self):
+        from unittest.mock import AsyncMock, patch
+
+        import httpx
+        from app.integrations.client import AIClient
+
+        request = httpx.Request("POST", "https://api.deepseek.com/chat/completions")
+        response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": "ok",
+                    }
+                }
+            ]
+        }
+
+        async def fake_post(*args, **kwargs):
+            if kwargs.get("proxy_url") is None:
+                raise httpx.ConnectError("direct failed", request=request)
+            return response
+
+        client = AIClient(api_key="sk-test")
+        with patch.object(client, "_post_chat", new=AsyncMock(side_effect=fake_post)) as post_mock:
+            result = await client.chat([{"role": "user", "content": "ping"}], max_retries=0)
+
+        self.assertEqual(result, "ok")
+        self.assertEqual(client.last_connection_path, "local_proxy")
+        self.assertEqual(post_mock.await_count, 2)
+
+    async def test_ai_client_does_not_fallback_to_proxy_on_auth_error(self):
+        from unittest.mock import AsyncMock, patch
+
+        import httpx
+        from app.integrations.client import AIClient
+
+        request = httpx.Request("POST", "https://api.deepseek.com/chat/completions")
+        response = httpx.Response(401, request=request, text="bad key")
+
+        async def fake_post(*args, **kwargs):
+            raise httpx.HTTPStatusError("auth failed", request=request, response=response)
+
+        client = AIClient(api_key="sk-test")
+        with patch.object(client, "_post_chat", new=AsyncMock(side_effect=fake_post)) as post_mock:
+            with self.assertRaisesRegex(RuntimeError, "API error 401"):
+                await client.chat([{"role": "user", "content": "ping"}], max_retries=0)
+
+        self.assertEqual(post_mock.await_count, 1)
+
+    async def test_agent_fallback_answers_platform_identity_without_tool_list(self):
+        from app.services.agent_planner import _fallback_chat_reply
+
+        questions = (
+            "帮我用一句话总结这个平台能做什么",
+            "一句话告诉我，你的最大特色",
+            "你和普通需求发布平台有什么区别",
+        )
+        for question in questions:
+            with self.subTest(question=question):
+                reply = _fallback_chat_reply(question, "")
+                self.assertIn("AI", reply)
+                self.assertTrue(any(token in reply for token in ("撮合", "匹配", "连接")))
+                self.assertNotIn("我现在可以帮你分析文件、整理需求草稿", reply)
+
+    async def test_conversation_previews_keep_same_user_separate_by_need(self):
+        from app.models.message import Message
+        from app.models.user import User
+        from app.services import message_service
+
+        async with self.Session() as db:
+            alice = User(username="alice-msg", password_hash="x")
+            bob = User(username="bob-msg", password_hash="x")
+            db.add_all([alice, bob])
+            await db.flush()
+            db.add_all([
+                Message(need_id=101, sender_id=alice.id, receiver_id=bob.id, content="need 101 first"),
+                Message(need_id=202, sender_id=bob.id, receiver_id=alice.id, content="need 202 latest"),
+            ])
+            await db.commit()
+
+            previews = await message_service.get_conversations(db, alice.id)
+
+        self.assertEqual({item.need_id for item in previews}, {101, 202})
+        self.assertTrue(all(item.other_user_id == bob.id for item in previews))
 
     async def test_agent_messages_return_latest_limit_in_chronological_order(self):
         from app.models.agent import AgentMessage, AgentSession
@@ -491,6 +704,17 @@ class AgentBehaviorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state["collected"]["type"], "组队")
         self.assertEqual(state["missing_fields"][0], "title")
 
+        state = collect_need_follow_up("报名参加acm", state)
+        self.assertEqual(state["missing_fields"][0], "requirements")
+
+        state = collect_need_follow_up("多人", state)
+        self.assertEqual(state["collected"]["selection_mode"], "multi")
+        self.assertEqual(state["missing_fields"][0], "requirements")
+
+        state = collect_need_follow_up("需要会 C++ 和算法训练", state)
+        self.assertEqual(state["collected"]["requirements"], "需要会 C++ 和算法训练")
+        self.assertEqual(state["missing_fields"], [])
+
     async def test_agent_executor_can_build_draft_from_follow_up_state(self):
         from app.services.agent_executor import build_draft_from_follow_up_state
 
@@ -498,12 +722,90 @@ class AgentBehaviorTests(unittest.IsolatedAsyncioTestCase):
             "type": "组队",
             "title": "黑客松前端搭子",
             "description": "需要一起完成黑客松前端和演示。",
+            "requirements": "需要会 Vue、接口联调和路演展示",
             "selection_mode": "multi",
         })
 
         self.assertEqual(draft["type"], "组队")
         self.assertEqual(draft["title"], "黑客松前端搭子")
         self.assertEqual(draft["selection_mode"], "multi")
+        self.assertIn("Vue", draft["description"])
+
+    async def test_semantic_router_skill_routes_existing_vs_publish_needs(self):
+        from app.skills.semantic_router import SemanticRouterSkill
+
+        skill = SemanticRouterSkill()
+
+        discover = await skill.execute({
+            "message": "我想打算法比赛，帮我看看有没有这方面的组队需求",
+            "user_context": "用户会 C++ 和算法",
+        })
+        self.assertEqual(discover["intent"], "discover_needs")
+        self.assertEqual(discover["next_action"], "recommend_existing_needs")
+        self.assertTrue(discover["semantic_frame"]["wants_existing"])
+
+        publish = await skill.execute({
+            "message": "帮我发布一个蓝桥杯组队需求",
+            "user_context": "用户想参加比赛",
+        })
+        self.assertEqual(publish["intent"], "publish_need")
+        self.assertEqual(publish["next_action"], "start_publish_follow_up")
+        self.assertTrue(publish["semantic_frame"]["wants_create"])
+
+    async def test_single_selection_description_alignment_removes_multi_person_phrasing(self):
+        from app.routers.needs import _align_description_with_selection_mode
+
+        text = "想找2-3个志同道合的队友一起冲大创，最好多个方向互补。"
+        aligned = _align_description_with_selection_mode(text, "single")
+
+        self.assertIn("1位", aligned)
+        self.assertNotIn("2-3个", aligned)
+        self.assertNotIn("多个", aligned)
+
+    async def test_semantic_search_lazily_embeds_new_candidates_without_profile_embedding(self):
+        from unittest.mock import patch
+
+        from app.agents.semantic_search_agent import SemanticSearchAgent
+        from app.models.user import User
+        from app.skills.match_skill import MatchSkill
+
+        class FakeEmbeddingSkill:
+            async def execute(self, input_data: dict) -> dict:
+                return {"embedding": [1.0, 0.0]}
+
+        def fake_get_skill(name: str):
+            if name == "embedding":
+                return FakeEmbeddingSkill()
+            if name == "vector_match":
+                return MatchSkill()
+            raise KeyError(name)
+
+        async with self.Session() as db:
+            candidate = User(
+                username="fresh-candidate",
+                password_hash="x",
+                bio="Vue 前端和路演页面",
+                skill_tags=["Vue", "前端", "路演"],
+                profile_embedding=None,
+            )
+            db.add(candidate)
+            await db.commit()
+            candidate_id = candidate.id
+
+            with patch("app.skills.registry.SkillRegistry.get", side_effect=fake_get_skill), patch(
+                "app.knowledge.match_memory.MatchMemoryStore.retrieve_similar",
+                return_value=[],
+            ):
+                result = await SemanticSearchAgent().execute({
+                    "embedding": [1.0, 0.0],
+                    "tags": ["Vue", "前端"],
+                    "db": db,
+                    "exclude_user_id": 999,
+                })
+
+            self.assertTrue(any(item["id"] == candidate_id for item in result["candidates"]), result)
+            await db.refresh(candidate)
+            self.assertEqual(candidate.profile_embedding, [1.0, 0.0])
 
 
 if __name__ == "__main__":
